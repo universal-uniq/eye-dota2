@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Eye Dota 2 — мета, сборки, статистика</title>
+
+<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+
+<meta property="og:type" content="website" />
+<meta property="og:title" content="Eye Dota 2" />
+<meta property="og:description" content="Статус серверов, мета, сборки, статистика и профили игроков Dota 2" />
+<meta property="og:url" content="https://universal-uniq.github.io/eye-dota2/" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Eye Dota 2" />
+<meta name="twitter:description" content="Статус серверов, мета, сборки, статистика и профили игроков Dota 2" />
+
+<link rel="preconnect" href="https://api.opendota.com" />
+<link rel="preconnect" href="https://cdn.cloudflare.steamstatic.com" />
+<link rel="preconnect" href="https://www.opendota.com" />
+<link rel="stylesheet" href="style.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="#/servers">
+    <span class="eye">👁</span>
+    <h1>Eye <span>Dota 2</span></h1>
+  </a>
+  <nav id="mainNav">
+    <a href="#/servers"  data-route="servers">Серверы</a>
+    <a href="#/meta"     data-route="meta">Мета</a>
+    <a href="#/builds"   data-route="builds">Сборки</a>
+    <a href="#/leagues"  data-route="leagues">Лиги</a>
+    <a href="#/pro"      data-route="pro">Про-сцена</a>
+    <a href="#/player"   data-route="player">Профиль</a>
+    <a href="#/compare"  data-route="compare">Сравнить</a>
+  </nav>
+  <button id="themeToggle" class="theme-toggle" title="Сменить тему" aria-label="Сменить тему">🌙</button>
+</header>
+
+<main id="app">
+  <section class="empty-state" id="routeLoading">
+    <span class="dot loading"></span> Загрузка…
+  </section>
+</main>
+
+<footer>
+  <p>Eye Dota 2 · данные: <a href="https://www.opendota.com" target="_blank" rel="noopener">OpenDota</a> · статус: <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us</a></p>
+  <p class="small">Dota 2 — торговая марка Valve Corporation. Сайт не связан с Valve.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
