@@ -5,6 +5,7 @@
 const API = 'https://api.opendota.com/api';
 const CDN = 'https://cdn.cloudflare.steamstatic.com';
 const HERO_CDN = `${CDN}/apps/dota2/images/dota_react/heroes`;
+const ABILITY_CDN = `${CDN}/apps/dota2/images/dota_react/abilities`;
 const RANK_CDN = 'https://www.opendota.com/assets/images/dota2/rank_icons';
 
 const RANKS = {1:'Herald',2:'Guardian',3:'Crusader',4:'Archon',5:'Legend',6:'Ancient',7:'Divine',8:'Immortal'};
@@ -19,12 +20,9 @@ const PUBLIC_PROXIES = [
 
 const cache = {
   heroMap:{}, heroSlug:{}, heroImg:{}, heroStats:null, items:null,
-  itemById:{}, patches:null, leagues:null, _charts:{},
+  itemById:{}, abilityNames:{}, patches:null, leagues:null, _charts:{},
 };
 
-// ================================================================
-// УТИЛИТЫ
-// ================================================================
 const $  = (sel, root=document) => (root || document).querySelector(sel);
 const $$ = (sel, root=document) => [...((root || document).querySelectorAll(sel) || [])];
 
@@ -39,8 +37,8 @@ function fmtDateOnly(ts){
   return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'long',year:'numeric'});
 }
 function fmtDuration(sec){
-  if(!sec) return '0:00';
-  const m = Math.floor(sec/60), s = sec%60;
+  if(!sec && sec !== 0) return '0:00';
+  const m = Math.floor(sec/60), s = Math.floor(sec%60);
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 function rankName(tier){
@@ -171,6 +169,13 @@ async function loadPatches(){
     return cache.patches;
   }catch{ return []; }
 }
+async function loadAbilities(){
+  if(Object.keys(cache.abilityNames).length) return cache.abilityNames;
+  try{
+    cache.abilityNames = await fetch(`${API}/constants/abilities`).then(r=>r.json());
+    return cache.abilityNames;
+  }catch{ return {}; }
+}
 
 // ================================================================
 // НАСТРОЙКИ
@@ -223,21 +228,17 @@ function applySettings(){
 }
 function initSettings(){
   loadSettings(); applySettings();
-
   on($('#settingsBtn'), 'click', () => $('#settingsModal')?.classList.remove('hidden'));
   on($('#settingsClose'), 'click', () => $('#settingsModal')?.classList.add('hidden'));
   on($('.modal-backdrop'), 'click', () => $('#settingsModal')?.classList.add('hidden'));
-
   $$('#themeRow button').forEach(b => on(b, 'click', () => { SETTINGS.theme=b.dataset.themeVal; saveSettings(); applySettings(); }));
   $$('#accentRow button').forEach(b => on(b, 'click', () => { SETTINGS.accent=b.dataset.accentVal; saveSettings(); applySettings(); }));
   $$('#fontRow button').forEach(b => on(b, 'click', () => { SETTINGS.fontsize=b.dataset.fontVal; saveSettings(); applySettings(); }));
   $$('#compactRow button').forEach(b => on(b, 'click', () => { SETTINGS.compact=b.dataset.compactVal; saveSettings(); applySettings(); }));
-
   on($('#themeToggle'), 'click', () => {
     SETTINGS.theme = (SETTINGS.theme === 'dark') ? 'light' : 'dark';
     saveSettings(); applySettings();
   });
-
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if(SETTINGS.theme === 'auto') applySettings();
   });
@@ -840,7 +841,7 @@ async function renderLeaderboard(app){
 }
 
 // ================================================================
-// 🆕 РЕКОМЕНДАЦИИ
+// РЕКОМЕНДАЦИИ
 // ================================================================
 async function renderRecommend(app){
   const savedId = localStorage.getItem('eye-my-account') || '';
@@ -924,7 +925,6 @@ async function renderRecommend(app){
             <div class="meta" style="margin-top:6px">Проанализировано матчей: <b>${matches.length}</b></div>
           </div>
         </div>
-
         ${bestHeroes.length ? `
           <h3 style="margin-top:24px">✅ ${t('rec_best_heroes')} <span style="color:var(--muted);font-size:12px">(${t('rec_min_games')})</span></h3>
           <table class="data-table"><thead><tr><th>#</th><th>${t('hero')}</th><th>${t('games')}</th><th>${t('wins')}</th><th>${t('winrate')}</th><th>KDA</th></tr></thead>
@@ -935,9 +935,7 @@ async function renderRecommend(app){
               <td class="wr-cell good">${h.wr.toFixed(1)}%</td>
               <td>${h.kda.toFixed(2)}</td>
             </tr>`).join('')}</tbody>
-          </table>
-        ` : ''}
-
+          </table>` : ''}
         ${worstHeroes.length ? `
           <h3 style="margin-top:32px">⚠️ ${t('rec_worst_heroes')}</h3>
           <table class="data-table"><thead><tr><th>#</th><th>${t('hero')}</th><th>${t('games')}</th><th>${t('wins')}</th><th>${t('winrate')}</th><th>KDA</th></tr></thead>
@@ -948,33 +946,24 @@ async function renderRecommend(app){
               <td class="wr-cell bad">${h.wr.toFixed(1)}%</td>
               <td>${h.kda.toFixed(2)}</td>
             </tr>`).join('')}</tbody>
-          </table>
-        ` : ''}
-
+          </table>` : ''}
         ${positions.length ? `
           <h3 style="margin-top:32px">📍 ${t('rec_best_positions')}</h3>
           <div class="stat-grid">
-            ${positions.map(p => `
-              <div class="stat-card">
-                <span class="val accent">${p.name}</span>
-                <span class="lbl">${p.games} ${t('games')} · ${p.wr.toFixed(0)}% ${t('winrate')}</span>
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
-
+            ${positions.map(p => `<div class="stat-card">
+              <span class="val accent">${p.name}</span>
+              <span class="lbl">${p.games} ${t('games')} · ${p.wr.toFixed(0)}% ${t('winrate')}</span>
+            </div>`).join('')}
+          </div>` : ''}
         ${tryHeroes.length ? `
           <h3 style="margin-top:32px">🎲 ${t('rec_try')}</h3>
           <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
-            ${tryHeroes.map(h => `
-              <a class="hero-card" href="#/hero/${h.id}">
-                <img src="${h.img}" alt=""/>
-                <div class="name">${esc(h.name)}</div>
-                <span class="wr">${h.wr.toFixed(1)}% · ${(h.picks/1000).toFixed(0)}k ${t('games')}</span>
-              </a>
-            `).join('')}
-          </div>
-        ` : ''}
+            ${tryHeroes.map(h => `<a class="hero-card" href="#/hero/${h.id}">
+              <img src="${h.img}" alt=""/>
+              <div class="name">${esc(h.name)}</div>
+              <span class="wr">${h.wr.toFixed(1)}% · ${(h.picks/1000).toFixed(0)}k ${t('games')}</span>
+            </a>`).join('')}
+          </div>` : ''}
       `;
     }catch(e){
       body.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
@@ -991,7 +980,6 @@ async function renderRecommend(app){
     }
     analyze(id);
   });
-
   if(savedId){
     const id = extractAccountId(savedId);
     if(id && typeof id !== 'object') analyze(id);
@@ -999,18 +987,15 @@ async function renderRecommend(app){
 }
 
 // ================================================================
-// 🆕 ИДЕАЛЬНЫЙ ПИК
+// ИДЕАЛЬНЫЙ ПИК
 // ================================================================
 async function renderPick(app){
   const heroes = cache.heroStats || await fetch(`${API}/heroStats`).then(r=>r.json());
   cache.heroStats = heroes;
-
   const selected = new Set();
-
   app.innerHTML = `
     <h2 class="page-title">${t('pick_title')}</h2>
     <p class="page-sub">${t('pick_sub')} · <span style="color:var(--muted)">${t('pick_select')}</span></p>
-
     <div class="filters" style="justify-content:space-between">
       <div>${t('pick_selected')}: <b id="pickCount">0</b></div>
       <div style="display:flex;gap:8px">
@@ -1018,25 +1003,20 @@ async function renderPick(app){
         <button id="pickAnalyze" class="settings-btn active">${t('pick_analyze')}</button>
       </div>
     </div>
-
     <h3>${t('pick_enemy')}</h3>
     <div class="hero-grid" id="pickGrid" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr))">
       ${heroes.sort((a,b)=>(a.localized_name||'').localeCompare(b.localized_name||'','ru')).map(h => `
         <div class="hero-card pick-hero" data-id="${h.id}" style="cursor:pointer">
           <img src="${heroImgUrl(h.id)}" alt="${esc(h.localized_name)}" loading="lazy"/>
           <div class="name">${esc(h.localized_name)}</div>
-        </div>
-      `).join('')}
+        </div>`).join('')}
     </div>
-
     <div id="pickResult" style="margin-top:32px"></div>
   `;
-
   function updateCount(){
     const c = $('#pickCount');
     if(c) c.textContent = selected.size;
   }
-
   $$('.pick-hero').forEach(card => {
     on(card, 'click', () => {
       const id = Number(card.dataset.id);
@@ -1045,14 +1025,12 @@ async function renderPick(app){
       updateCount();
     });
   });
-
   on($('#pickClear'), 'click', () => {
     selected.clear();
     $$('.pick-hero').forEach(c => c.classList.remove('picked'));
     updateCount();
     $('#pickResult').innerHTML = '';
   });
-
   on($('#pickAnalyze'), 'click', async () => {
     const result = $('#pickResult');
     if(!selected.size){
@@ -1060,15 +1038,11 @@ async function renderPick(app){
       return;
     }
     result.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
-
     try{
-      // Для каждого выбранного героя врага получаем матчапы
       const enemyIds = [...selected];
       const allMatchups = await Promise.all(
         enemyIds.map(id => fetch(`${API}/heroes/${id}/matchups`).then(r=>r.json()).catch(()=>[]))
       );
-
-      // Для каждого потенциального героя считаем средний винрейт против всех врагов
       const candidates = {};
       allMatchups.forEach(matchups => {
         for(const m of matchups){
@@ -1079,40 +1053,28 @@ async function renderPick(app){
           candidates[m.hero_id].games += m.games_played;
         }
       });
-
       const list = Object.values(candidates)
-        .filter(c => c.wrs.length === enemyIds.length) // герой должен иметь данные против ВСЕХ врагов
-        .map(c => ({
-          ...c,
-          avgWr: c.wrs.reduce((a,b)=>a+b,0) / c.wrs.length,
-        }));
-
+        .filter(c => c.wrs.length === enemyIds.length)
+        .map(c => ({ ...c, avgWr: c.wrs.reduce((a,b)=>a+b,0) / c.wrs.length }));
       const topPicks = [...list].sort((a,b)=>b.avgWr-a.avgWr).slice(0,5);
       const topBans  = [...list].sort((a,b)=>a.avgWr-b.avgWr).slice(0,5);
-
       result.innerHTML = `
         <h3>✅ ${t('pick_picks')}</h3>
         <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
-          ${topPicks.length ? topPicks.map(c => `
-            <a class="hero-card" href="#/hero/${c.id}">
-              <img src="${heroImgUrl(c.id)}" alt=""/>
-              <div class="name">${esc(heroName(c.id))}</div>
-              <span class="wr">${c.avgWr.toFixed(1)}% ${t('pick_wr_vs')} · ${c.games} ${t('pick_games_vs')}</span>
-            </a>
-          `).join('') : `<div class="empty-state">${t('no_data')}</div>`}
+          ${topPicks.length ? topPicks.map(c => `<a class="hero-card" href="#/hero/${c.id}">
+            <img src="${heroImgUrl(c.id)}" alt=""/>
+            <div class="name">${esc(heroName(c.id))}</div>
+            <span class="wr">${c.avgWr.toFixed(1)}% ${t('pick_wr_vs')} · ${c.games} ${t('pick_games_vs')}</span>
+          </a>`).join('') : `<div class="empty-state">${t('no_data')}</div>`}
         </div>
-
         <h3 style="margin-top:32px">🚫 ${t('pick_bans')}</h3>
         <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
-          ${topBans.length ? topBans.map(c => `
-            <a class="hero-card" href="#/hero/${c.id}">
-              <img src="${heroImgUrl(c.id)}" alt=""/>
-              <div class="name">${esc(heroName(c.id))}</div>
-              <span class="wr bad">${c.avgWr.toFixed(1)}% ${t('pick_wr_vs')} · ${c.games} ${t('pick_games_vs')}</span>
-            </a>
-          `).join('') : `<div class="empty-state">${t('no_data')}</div>`}
-        </div>
-      `;
+          ${topBans.length ? topBans.map(c => `<a class="hero-card" href="#/hero/${c.id}">
+            <img src="${heroImgUrl(c.id)}" alt=""/>
+            <div class="name">${esc(heroName(c.id))}</div>
+            <span class="wr bad">${c.avgWr.toFixed(1)}% ${t('pick_wr_vs')} · ${c.games} ${t('pick_games_vs')}</span>
+          </a>`).join('') : `<div class="empty-state">${t('no_data')}</div>`}
+        </div>`;
     }catch(e){
       result.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
     }
@@ -1462,52 +1424,293 @@ async function renderCompare(app, params){
 }
 
 // ================================================================
-// МАТЧ
+// МАТЧ — полная страница
 // ================================================================
 async function renderMatch(app, params){
   const matchId = params?.[0];
   if(!matchId){ app.innerHTML = `<div class="empty-state error">${t('not_found')}</div>`; return; }
   app.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
+
   try{
-    const m = await fetch(`${API}/matches/${matchId}`).then(r=>r.json());
+    const [m, items, abilities] = await Promise.all([
+      fetch(`${API}/matches/${matchId}`).then(r=>r.json()),
+      loadItems(),
+      loadAbilities(),
+    ]);
     if(!m || !m.match_id) throw new Error(t('not_found'));
+
     const radiantWin = m.radiant_win;
-    const rad = (m.players||[]).filter(p => p.player_slot < 128);
-    const dire = (m.players||[]).filter(p => p.player_slot >= 128);
-    const renderTeam = (team, side) => `
-      <div class="team-block ${side}">
-        <h3><span>${side==='radiant'?'🌿 Radiant':'🔥 Dire'}</span>
-          <span class="score">${side==='radiant'?(m.radiant_score||0):(m.dire_score||0)}</span></h3>
-        ${team.map(p => `<div class="player-row">
-          <img src="${heroImgUrl(p.hero_id)}" alt=""/>
-          <div class="pname">${esc(heroName(p.hero_id))}<small>${esc(p.personaname||p.name||'—')}</small></div>
-          <div class="pstat"><b>${p.kills||0}</b> / ${p.deaths||0} / ${p.assists||0}<br/>
-            <span style="font-size:11px">GPM ${p.gold_per_min||0} · XPM ${p.xp_per_min||0} · LH ${p.last_hits||0}</span>
-          </div>
-        </div>`).join('')}
+    const players = m.players || [];
+    const rad = players.filter(p => p.player_slot < 128);
+    const dire = players.filter(p => p.player_slot >= 128);
+    const isParsed = !!m.version;
+
+    const itemImg = (id) => {
+      if(!id) return '';
+      const slug = cache.itemById[String(id)];
+      if(!slug) return '';
+      const item = items[slug];
+      const urls = itemImgCandidates(item, slug);
+      return urls[0] || '';
+    };
+    const itemName = (id) => {
+      if(!id) return '';
+      const slug = cache.itemById[String(id)];
+      return slug ? (items[slug]?.dname || slug) : '';
+    };
+    const abilityImg = (id) => {
+      if(!id) return '';
+      return `${ABILITY_CDN}/${id}.png`;
+    };
+
+    const renderAbilities = (player) => {
+      const arr = player.ability_upgrades_arr || [];
+      if(!arr.length) return '<span style="color:var(--muted);font-size:12px">—</span>';
+      return `<div class="abilities-row">
+        ${arr.map((id, i) => `<span class="ability-step" title="Ур. ${i+1}">
+          <img src="${abilityImg(id)}" onerror="this.style.opacity='.3'"/>
+        </span>`).join('')}
       </div>`;
+    };
+
+    const renderItems = (player) => {
+      const main = ['item_0','item_1','item_2','item_3','item_4','item_5'];
+      const back = ['backpack_0','backpack_1','backpack_2'];
+      const neutral = ['item_neutral'];
+      const slot = (k) => {
+        const id = player[k];
+        if(!id) return `<span class="slot empty"></span>`;
+        const img = itemImg(id);
+        const name = itemName(id);
+        return `<span class="slot" title="${esc(name)}">
+          ${img ? `<img src="${img}" onerror="this.style.display='none'"/>` : `<span class="slot-text">${esc(name.slice(0,3))}</span>`}
+        </span>`;
+      };
+      return `
+        <div class="items-grid">
+          <div class="items-row">${main.map(slot).join('')}</div>
+          <div class="items-row small">
+            ${back.map(slot).join('')}
+            <span class="separator"></span>
+            ${neutral.map(slot).join('')}
+          </div>
+        </div>
+      `;
+    };
+
+    const playerRow = (p, side) => {
+      const kills = p.kills || 0, deaths = p.deaths || 0, assists = p.assists || 0;
+      const kda = deaths ? ((kills + assists) / deaths) : (kills + assists);
+      const isRadiant = side === 'radiant';
+      return `
+        <tr class="player-tr ${isRadiant ? 'radiant-row' : 'dire-row'}">
+          <td class="cell-hero">
+            <a href="#/hero/${p.hero_id}" class="hero-mini">
+              <img src="${heroImgUrl(p.hero_id)}" alt=""/>
+              <div>
+                <div class="hero-mini-name">${esc(heroName(p.hero_id))}</div>
+                <div class="hero-mini-level">Lv ${p.level || '?'}</div>
+              </div>
+            </a>
+          </td>
+          <td class="cell-player">
+            <a href="#/player/${p.account_id}">${esc(p.personaname || p.name || 'Anonymous')}</a>
+          </td>
+          <td class="cell-num"><b>${kills}</b> / <span style="color:var(--bad)">${deaths}</span> / ${assists}</td>
+          <td class="cell-num">${kda.toFixed(2)}</td>
+          <td class="cell-num">${(p.total_gold || 0).toLocaleString('ru-RU')}</td>
+          <td class="cell-num">${p.gold_per_min || 0}</td>
+          <td class="cell-num">${p.xp_per_min || 0}</td>
+          <td class="cell-num">${p.last_hits || 0} / ${p.denies || 0}</td>
+          <td class="cell-num">${(p.hero_damage || 0).toLocaleString('ru-RU')}</td>
+          <td class="cell-num">${(p.tower_damage || 0).toLocaleString('ru-RU')}</td>
+          <td class="cell-num">${(p.hero_healing || 0).toLocaleString('ru-RU')}</td>
+          <td class="cell-items">${renderItems(p)}</td>
+          <td class="cell-abilities">${renderAbilities(p)}</td>
+          <td class="cell-num small-meta">
+            ${p.rune_pickups || 0} 🧿 ·
+            ${p.camps_stacked || 0} 🏕 ·
+            ${p.obs_placed || 0} 👁 ·
+            ${p.sen_placed || 0} 🔭
+          </td>
+          <td class="cell-num">${p.buyback_count || 0}</td>
+        </tr>
+      `;
+    };
+
+    const roshanEvents = (m.objectives || []).filter(o => o.type === 'roshan_kill');
+    const firstBlood = m.first_blood_time;
+    const goldAdv = m.radiant_gold_adv || [];
+    const xpAdv = m.radiant_xp_adv || [];
+
     app.innerHTML = `
       <a href="#/pro" style="font-size:13px">← ${t('nav_pro')}</a>
       <h2 class="page-title" style="margin-top:12px">Match #${m.match_id}</h2>
+
       <div class="match-header">
-        <div style="font-size:20px;font-weight:700">
-          <span style="color:var(--ok)">Radiant ${m.radiant_score||0}</span>
-          &nbsp;:&nbsp;
-          <span style="color:var(--bad)">${m.dire_score||0} Dire</span>
+        <div style="font-size:22px;font-weight:700;display:flex;gap:16px;justify-content:center;align-items:center;flex-wrap:wrap">
+          <span style="color:var(--ok)">🌿 Radiant ${m.radiant_score||0}</span>
+          <span style="color:var(--muted)">—</span>
+          <span style="color:var(--bad)">${m.dire_score||0} Dire 🔥</span>
         </div>
-        <div class="${radiantWin?'radiant-win':'dire-win'}">${radiantWin?'Победа Radiant':'Победа Dire'}</div>
-        <div class="match-meta">
+        <div class="${radiantWin?'radiant-win':'dire-win'}" style="margin-top:8px">
+          ${radiantWin?'Победа Radiant':'Победа Dire'}
+        </div>
+        <div class="match-meta" style="margin-top:16px">
           <span>⏱ ${fmtDuration(m.duration||0)}</span>
           <span>📅 ${fmtDate(m.start_time||0)}</span>
+          <span>🎮 ${GAME_MODES[m.game_mode]||'Mode '+m.game_mode}</span>
           ${m.league_name?`<span>🏆 ${esc(m.league_name)}</span>`:''}
+          ${firstBlood ? `<span>🩸 Первая кровь: ${fmtDuration(firstBlood)}</span>` : ''}
+          ${!isParsed ? `<span style="color:var(--warn)">⚠ Матч не распарсен — часть данных недоступна</span>` : ''}
         </div>
       </div>
-      <div class="match-teams">${renderTeam(rad,'radiant')}${renderTeam(dire,'dire')}</div>
-      <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:20px">
+
+      <div class="tabs">
+        <button data-tab="players" class="active">👥 Игроки</button>
+        <button data-tab="charts">📈 Графики</button>
+        <button data-tab="events">🎯 События</button>
+      </div>
+
+      <div class="tab-panel active" id="tab-players">
+        <h3 style="margin-bottom:12px;color:var(--ok)">🌿 Radiant</h3>
+        <div class="players-table-wrap">
+          <table class="players-table">
+            <thead><tr>
+              <th>Герой</th><th>Игрок</th><th>K/D/A</th><th>KDA</th>
+              <th>Net</th><th>GPM</th><th>XPM</th><th>LH/DN</th>
+              <th>Hero DMG</th><th>Tower DMG</th><th>Heal</th>
+              <th>Предметы</th><th>Скиллы</th><th>Прочее</th><th>BB</th>
+            </tr></thead>
+            <tbody>${rad.map(p => playerRow(p, 'radiant')).join('')}</tbody>
+          </table>
+        </div>
+        <h3 style="margin:24px 0 12px;color:var(--bad)">🔥 Dire</h3>
+        <div class="players-table-wrap">
+          <table class="players-table">
+            <thead><tr>
+              <th>Герой</th><th>Игрок</th><th>K/D/A</th><th>KDA</th>
+              <th>Net</th><th>GPM</th><th>XPM</th><th>LH/DN</th>
+              <th>Hero DMG</th><th>Tower DMG</th><th>Heal</th>
+              <th>Предметы</th><th>Скиллы</th><th>Прочее</th><th>BB</th>
+            </tr></thead>
+            <tbody>${dire.map(p => playerRow(p, 'dire')).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-charts">
+        <div class="chart-wrap">
+          <h3>💰 Net worth advantage <span style="font-size:12px;color:var(--muted)">(&gt; 0 — ведёт Radiant)</span></h3>
+          <div class="chart-canvas-wrap"><canvas id="chartGoldAdv"></canvas></div>
+        </div>
+        <div class="chart-wrap">
+          <h3>⭐ XP advantage</h3>
+          <div class="chart-canvas-wrap"><canvas id="chartXpAdv"></canvas></div>
+        </div>
+        <div class="chart-wrap">
+          <h3>💎 Net worth по игрокам</h3>
+          <div class="chart-canvas-wrap"><canvas id="chartGoldPlayers"></canvas></div>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="tab-events">
+        <h3>🐉 Рошаны</h3>
+        ${roshanEvents.length ? `
+          <table class="data-table" style="margin-top:12px">
+            <thead><tr><th>Время</th><th>Команда</th></tr></thead>
+            <tbody>${roshanEvents.map(r => `
+              <tr>
+                <td>${fmtDuration(r.time || 0)}</td>
+                <td>${r.team === 2 ? '<span style="color:var(--ok)">🌿 Radiant</span>' : '<span style="color:var(--bad)">🔥 Dire</span>'}</td>
+              </tr>`).join('')}</tbody>
+          </table>
+        ` : '<div class="empty-state">Нет данных о Рошане (матч не распарсен)</div>'}
+        <h3 style="margin-top:24px">🩸 Первая кровь</h3>
+        <div class="status-summary" style="margin-top:12px">
+          ${firstBlood ? `Через <b>${fmtDuration(firstBlood)}</b> после начала игры` : '<span style="color:var(--muted)">Нет данных</span>'}
+        </div>
+      </div>
+
+      <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:30px">
         <a href="https://www.opendota.com/matches/${m.match_id}" target="_blank" rel="noopener">OpenDota ↗</a>
-      </p>`;
+        &nbsp;·&nbsp;
+        <a href="https://www.dotabuff.com/matches/${m.match_id}" target="_blank" rel="noopener">Dotabuff ↗</a>
+        &nbsp;·&nbsp;
+        <a href="https://stratz.com/matches/${m.match_id}" target="_blank" rel="noopener">STRATZ ↗</a>
+      </p>
+    `;
+
+    $$('.tabs button', app).forEach(btn => on(btn, 'click', () => {
+      $$('.tabs button', app).forEach(b => b.classList.remove('active'));
+      $$('.tab-panel', app).forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      const panel = $('#tab-'+btn.dataset.tab, app);
+      if(panel) panel.classList.add('active');
+      if(btn.dataset.tab === 'charts') setTimeout(() => drawMatchCharts(m, goldAdv, xpAdv), 30);
+    }));
+
+    setTimeout(() => drawMatchCharts(m, goldAdv, xpAdv), 80);
+
   }catch(e){
     app.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
+  }
+}
+
+function drawMatchCharts(m, goldAdv, xpAdv){
+  if(!window.Chart) return;
+
+  const canvasGold = document.getElementById('chartGoldAdv');
+  if(canvasGold && goldAdv?.length){
+    if(cache._charts.matchGold){ try{ cache._charts.matchGold.destroy(); }catch{} }
+    const labels = goldAdv.map((_, i) => `${i}м`);
+    cache._charts.matchGold = new Chart(canvasGold, {
+      type: 'line',
+      data: { labels, datasets: [{ label:'Radiant − Dire', data:goldAdv,
+        borderColor:'#e05a3a', backgroundColor:'rgba(224,90,58,.15)',
+        tension:.3, fill:true, pointRadius:0 }]},
+      options:{ responsive:true, maintainAspectRatio:false, animation:false,
+        plugins:{ legend:{ display:false }},
+        scales:{ y:{ grid:{ color:'rgba(255,255,255,.06)' }},
+                 x:{ grid:{ display:false }, ticks:{ maxTicksLimit:12 }}}},
+    });
+  }
+
+  const canvasXp = document.getElementById('chartXpAdv');
+  if(canvasXp && xpAdv?.length){
+    if(cache._charts.matchXp){ try{ cache._charts.matchXp.destroy(); }catch{} }
+    const labels = xpAdv.map((_, i) => `${i}м`);
+    cache._charts.matchXp = new Chart(canvasXp, {
+      type:'line',
+      data:{ labels, datasets:[{ label:'Radiant − Dire', data:xpAdv,
+        borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.15)',
+        tension:.3, fill:true, pointRadius:0 }]},
+      options:{ responsive:true, maintainAspectRatio:false, animation:false,
+        plugins:{ legend:{ display:false }},
+        scales:{ y:{ grid:{ color:'rgba(255,255,255,.06)' }},
+                 x:{ grid:{ display:false }, ticks:{ maxTicksLimit:12 }}}},
+    });
+  }
+
+  const canvasPlayers = document.getElementById('chartGoldPlayers');
+  if(canvasPlayers && m.players?.length){
+    const sorted = [...m.players].sort((a,b) => {
+      if(a.player_slot < 128 && b.player_slot >= 128) return -1;
+      if(a.player_slot >= 128 && b.player_slot < 128) return 1;
+      return 0;
+    });
+    const labels = sorted.map(p => heroName(p.hero_id));
+    const data = sorted.map(p => p.total_gold || 0);
+    const colors = sorted.map(p => p.player_slot < 128 ? '#3fb950' : '#f85149');
+    if(cache._charts.matchPlayers){ try{ cache._charts.matchPlayers.destroy(); }catch{} }
+    cache._charts.matchPlayers = new Chart(canvasPlayers, {
+      type:'bar',
+      data:{ labels, datasets:[{ label:'Net worth', data, backgroundColor:colors }]},
+      options:{ responsive:true, maintainAspectRatio:false, animation:false,
+        plugins:{ legend:{ display:false }},
+        scales:{ y:{ grid:{ color:'rgba(255,255,255,.06)' }},
+                 x:{ grid:{ display:false }, ticks:{ maxRotation:45, minRotation:30 }}}},
+    });
   }
 }
 
