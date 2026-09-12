@@ -441,6 +441,6 @@ table.data-table img,
 
 /* Иконки героев в карточках — 16:9, как в Dota 2 */
 .hero-card img {
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 19 / 10;
   object-fit: cover;
 }
