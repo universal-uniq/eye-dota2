@@ -21,7 +21,7 @@ const PUBLIC_PROXIES = [
 
 const cache = {
   heroMap:{}, heroSlug:{}, heroImg:{}, heroStats:null, items:null,
-  itemById:{}, abilityNames:{}, abilityById:{}, patches:null, leagues:null, _charts:{},
+  itemById:{}, abilityNames:{}, abilityById:{}, patches:null, _charts:{},
 };
 
 const $  = (sel, root=document) => (root || document).querySelector(sel);
@@ -170,7 +170,6 @@ async function loadPatches(){
     return cache.patches;
   }catch{ return []; }
 }
-// Карта "числовой ID способности" → "строковый slug"
 async function loadAbilities(){
   if(Object.keys(cache.abilityById).length) return cache.abilityById;
   try{
@@ -263,14 +262,14 @@ function initLang(){
 }
 
 // ================================================================
-// РОУТЕР
+// РОУТЕР (без leagues)
 // ================================================================
 const routes = {
   servers: renderServers, meta: renderMeta, builds: renderBuilds,
   heroes: renderHeroes, hero: renderHeroPage,
   patch: renderPatch, stats: renderStats, leaderboard: renderLeaderboard,
   recommend: renderRecommend, pick: renderPick,
-  leagues: renderLeagues, pro: renderPro,
+  pro: renderPro,
   player: renderPlayer, compare: renderCompare, match: renderMatch, sites: renderSites,
 };
 function parseHash(){
@@ -1087,47 +1086,6 @@ async function renderPick(app){
 }
 
 // ================================================================
-// ЛИГИ
-// ================================================================
-async function renderLeagues(app){
-  app.innerHTML = `
-    <h2 class="page-title">Лиги и турниры</h2>
-    <p class="page-sub">Список лиг из OpenDota</p>
-    <div class="filters">
-      <label for="leagueSearch">${t('search')}:</label>
-      <input id="leagueSearch" type="text" placeholder="Название лиги…"
-             style="flex:1;max-width:320px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg3);color:var(--text);outline:none"/>
-    </div>
-    <div id="leaguesBody"><div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div></div>
-  `;
-  try{
-    const leagues = cache.leagues || await fetch(`${API}/leagues`).then(r=>r.json());
-    cache.leagues = leagues;
-    const sorted = [...leagues].sort((a,b)=>(b.leagueid||0)-(a.leagueid||0));
-    const render = (q='') => {
-      const body = $('#leaguesBody');
-      if(!body) return;
-      const ql = q.toLowerCase();
-      const filtered = sorted.filter(l => !ql || (l.name||'').toLowerCase().includes(ql));
-      const show = filtered.slice(0,100);
-      body.innerHTML = show.length ? `
-        <p class="page-sub">Найдено: ${filtered.length.toLocaleString('ru-RU')} · показано ${show.length}</p>
-        ${show.map(l => `<div class="league-row">
-          <div><div class="lname">${esc(l.name||'—')}</div>
-            <div class="lmeta">ID ${l.leagueid}${l.tier?' · tier: '+esc(l.tier):''}</div></div>
-          <a href="https://www.opendota.com/leagues/${l.leagueid}" target="_blank" rel="noopener" style="font-size:13px">Матчи ↗</a>
-        </div>`).join('')}
-      ` : `<div class="empty-state">${t('no_data')}</div>`;
-    };
-    on($('#leagueSearch'), 'input', e => render(e.target.value));
-    render();
-  }catch(e){
-    const body = $('#leaguesBody');
-    if(body) body.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
-  }
-}
-
-// ================================================================
 // ПРО
 // ================================================================
 async function renderPro(app){
@@ -1464,7 +1422,6 @@ async function renderMatch(app, params){
       return slug ? (items[slug]?.dname || slug) : '';
     };
 
-    // Карта id → slug: "5090" → "death_prophet_carrion_swarm"
     const abilitySlug = (id) => cache.abilityById?.[String(id)] || '';
     const abilityImg = (id) => {
       const slug = abilitySlug(id);
