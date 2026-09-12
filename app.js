@@ -5,8 +5,6 @@
 const API = 'https://api.opendota.com/api';
 const CDN = 'https://cdn.cloudflare.steamstatic.com';
 const HERO_CDN = `${CDN}/apps/dota2/images/dota_react/heroes`;
-const ITEM_CDN = `${CDN}/apps/dota2/images/dota_react/items`;
-const ITEM_CDN_OLD = `${CDN}/apps/dota2/images/items`;
 const RANK_CDN = 'https://www.opendota.com/assets/images/dota2/rank_icons';
 
 const RANKS = {1:'Herald',2:'Guardian',3:'Crusader',4:'Archon',5:'Legend',6:'Ancient',7:'Divine',8:'Immortal'};
@@ -63,18 +61,21 @@ function heroImgUrl(id){
   return slug ? `${HERO_CDN}/${slug}.png` : '';
 }
 
-// 🎒 Иконка предмета — старый надёжный путь Valve с суффиксом _lg
-function itemImgUrl(key){
-  if(!key) return '';
-  const slug = String(key).toLowerCase().replace(/[^a-z0-9_]/g, '');
-  if(!slug) return '';
-  return `${ITEM_CDN_OLD}/${slug}_lg.png`;
+// 🎒 Иконка предмета — берём URL напрямую из OpenDota (поле item.img)
+// Если img отсутствует — собираем fallback из slug.
+function itemImgUrlFromData(item){
+  if(!item) return '';
+  const path = item.img || '';
+  if(!path) return '';
+  // OpenDota отдаёт путь вида "/apps/dota2/images/dota_react/items/blink.png"
+  return path.startsWith('http') ? path : `${CDN}${path}`;
 }
-function itemImgUrlFallback(key){
+// Fallback: пробуем старый _lg путь
+function itemImgUrlFallbackFromKey(key){
   if(!key) return '';
   const slug = String(key).toLowerCase().replace(/[^a-z0-9_]/g, '');
   if(!slug) return '';
-  return `${ITEM_CDN}/${slug}.png`;
+  return `${CDN}/apps/dota2/images/items/${slug}_lg.png`;
 }
 
 function esc(s){
@@ -441,7 +442,7 @@ async function renderMeta(app){
 }
 
 // ================================================================
-// СБОРКИ
+// СБОРКИ — используем item.img напрямую из OpenDota
 // ================================================================
 async function renderBuilds(app){
   app.innerHTML = `
@@ -486,15 +487,19 @@ async function renderBuilds(app){
           <h3 style="margin-top:24px">${title}</h3>
           <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
             ${entries.map(([key, count]) => {
-              const item = items[key] || { dname: key };
-              const url = itemImgUrl(key);
-              const fallback = itemImgUrlFallback(key);
-              const display = item.dname || key;
+              const itemData = items[key] || {};
+              // 🎯 ГЛАВНОЕ: URL берём из OpenDota (item.img), а не собираем вручную.
+              const url = itemImgUrlFromData(itemData);
+              const fallback = itemImgUrlFallbackFromKey(key);
+              const display = itemData.dname || key;
               return `
                 <div class="item-card">
                   <div class="img-wrap">
-                    <img src="${url}" alt="${esc(display)}" loading="lazy"
-                         onerror="if(this.dataset.fbk){this.style.opacity='0';}else{this.dataset.fbk='1';this.src='${fallback}';}"/>
+                    ${url
+                      ? `<img src="${url}" alt="${esc(display)}" loading="lazy"
+                             onerror="if(this.dataset.fbk){this.style.opacity='0';}else{this.dataset.fbk='1';this.src='${fallback}';}"/>`
+                      : `<img src="${fallback}" alt="${esc(display)}" loading="lazy"
+                             onerror="this.style.opacity='0'"/>`}
                   </div>
                   <div class="item-name">${esc(display)}</div>
                   <span class="item-count">× ${count.toLocaleString('ru-RU')}</span>
