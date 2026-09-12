@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru" data-theme="dark">
+<html lang="ru" data-theme="dark" data-accent="orange" data-fontsize="md">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -33,17 +33,67 @@
     <a href="#/patch"    data-route="patch"    data-i18n="nav_patch">Патч</a>
     <a href="#/stats"    data-route="stats"    data-i18n="nav_stats">Стата</a>
     <a href="#/leaderboard" data-route="leaderboard" data-i18n="nav_leaderboard">Топ-100</a>
+    <a href="#/recommend" data-route="recommend" data-i18n="nav_recommend">🎯 Рекомендации</a>
+    <a href="#/pick"     data-route="pick"     data-i18n="nav_pick">⚔️ Пик</a>
     <a href="#/leagues"  data-route="leagues"  data-i18n="nav_leagues">Лиги</a>
     <a href="#/pro"      data-route="pro"      data-i18n="nav_pro">Про</a>
     <a href="#/player"   data-route="player"   data-i18n="nav_player">Профиль</a>
-    <a href="#/compare"  data-route="compare"  data-i18n="nav_compare">Сравнить</a>
     <a href="#/sites"    data-route="sites"    data-i18n="nav_sites">🔗 Сайты</a>
   </nav>
-  <div style="display:flex;gap:8px;align-items:center">
+  <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
     <button id="langToggle" class="theme-toggle" title="RU / EN" aria-label="Сменить язык" style="width:auto;padding:0 12px;font-weight:700">RU</button>
     <button id="themeToggle" class="theme-toggle" title="Сменить тему" aria-label="Сменить тему">🌙</button>
+    <button id="settingsBtn" class="theme-toggle" title="Настройки" aria-label="Настройки">⚙️</button>
   </div>
 </header>
+
+<!-- Модальное окно настроек -->
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-body">
+    <div class="modal-header">
+      <h2>⚙️ <span data-i18n="settings_title">Настройки</span></h2>
+      <button id="settingsClose" class="modal-close">✕</button>
+    </div>
+
+    <div class="settings-block">
+      <h3 data-i18n="settings_theme">Тема</h3>
+      <div class="settings-row" id="themeRow">
+        <button class="settings-btn" data-theme-val="dark" data-i18n="settings_dark">🌙 Тёмная</button>
+        <button class="settings-btn" data-theme-val="light" data-i18n="settings_light">☀️ Светлая</button>
+        <button class="settings-btn" data-theme-val="auto" data-i18n="settings_auto">🖥 Авто</button>
+      </div>
+    </div>
+
+    <div class="settings-block">
+      <h3 data-i18n="settings_accent">Акцентный цвет</h3>
+      <div class="settings-row" id="accentRow">
+        <button class="settings-btn color-btn" data-accent-val="orange" title="Оранжевый" style="--c:#e05a3a">🟠</button>
+        <button class="settings-btn color-btn" data-accent-val="red"    title="Красный"   style="--c:#e24545">🔴</button>
+        <button class="settings-btn color-btn" data-accent-val="blue"   title="Синий"     style="--c:#4a8fe0">🔵</button>
+        <button class="settings-btn color-btn" data-accent-val="green"  title="Зелёный"   style="--c:#4ec26b">🟢</button>
+        <button class="settings-btn color-btn" data-accent-val="purple" title="Фиолетовый" style="--c:#a371f7">🟣</button>
+      </div>
+    </div>
+
+    <div class="settings-block">
+      <h3 data-i18n="settings_fontsize">Размер шрифта</h3>
+      <div class="settings-row" id="fontRow">
+        <button class="settings-btn" data-font-val="sm" data-i18n="settings_small">Маленький</button>
+        <button class="settings-btn" data-font-val="md" data-i18n="settings_medium">Средний</button>
+        <button class="settings-btn" data-font-val="lg" data-i18n="settings_large">Большой</button>
+      </div>
+    </div>
+
+    <div class="settings-block">
+      <h3 data-i18n="settings_compact">Компактный режим</h3>
+      <div class="settings-row" id="compactRow">
+        <button class="settings-btn" data-compact-val="off" data-i18n="settings_off">Выкл</button>
+        <button class="settings-btn" data-compact-val="on"  data-i18n="settings_on">Вкл</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <main id="app">
   <section class="empty-state" id="routeLoading">
