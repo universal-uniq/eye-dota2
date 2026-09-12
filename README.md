@@ -1,51 +1,78 @@
 # 👁 Eye Dota 2
 
-Мини-портал по Dota 2: статус серверов (live), мета патча, сборки, лиги, про-сцена,
-профиль игрока с графиками GPM/XPM, детали матча, сравнение двух игроков.
+Мини-портал по Dota 2: статус серверов, мета, сборки, лиги, про-сцена,
+профиль игрока с графиками GPM/XPM, детали матча, сравнение игроков
+и подборка полезных сайтов.
 
 🔗 **Live:** https://universal-uniq.github.io/eye-dota2/
 
-## Возможности
+## Вкладки
 
 | Вкладка | Что показывает |
 |---|---|
-| **Серверы** | Live-статус Connection Manager (CM) серверов Valve по регионам через `GetCMListForConnect` |
-| **Мета** | Топ героев по популярности / винрейту / contested, фильтр по рангам |
-| **Сборки** | Item popularity по герою: старт, ранняя, мид, лейт игра |
-| **Лиги** | Список лиг из OpenDota с поиском |
-| **Про-сцена** | Последние про-матчи + топ команд |
-| **Профиль** | Игрок: аватар, ранг-медаль, статы, матчи, герои, 📈 графики Chart.js |
+| **Серверы** | Live-статус CM-серверов Valve (если настроен Worker) или ссылка на steamstat.us |
+| **Мета** | Топ героев по популярности / винрейту / contested |
+| **Сборки** | Предметы по герою на разных этапах игры |
+| **Лиги** | Список лиг из OpenDota |
+| **Про-сцена** | Свежие про-матчи + топ команд |
+| **Профиль** | Игрок: аватар, ранг, матчи, герои, графики |
 | **Сравнить** | Side-by-side двух игроков |
+| **🔗 Другие сайты** | Полезные ресурсы по Dota 2 |
+
+## Live-режим серверов (опционально)
+
+Valve не отдаёт CORS-заголовки, поэтому прямые запросы к `api.steampowered.com`
+браузер блокирует. Чтобы включить live-статус:
+
+1. Поднимите Cloudflare Worker с кодом:
+
+   ```js
+   export default {
+     async fetch(request) {
+       if (request.method === 'OPTIONS') {
+         return new Response(null, { headers: {
+           'Access-Control-Allow-Origin': '*',
+           'Access-Control-Allow-Methods': 'GET, OPTIONS',
+           'Access-Control-Allow-Headers': '*',
+         }});
+       }
+       const url = new URL(request.url);
+       const target = 'https://api.steampowered.com' + url.pathname + url.search;
+       try {
+         const r = await fetch(target, { headers: { 'Accept': 'application/json' } });
+         return new Response(await r.text(), {
+           status: r.status,
+           headers: {
+             'Access-Control-Allow-Origin': '*',
+             'Vary': 'Origin',
+             'Cache-Control': 'no-store',
+             'Content-Type': r.headers.get('Content-Type') || 'application/json',
+           },
+         });
+       } catch (e) {
+         return new Response(JSON.stringify({ error: e.message }), {
+           status: 502,
+           headers: { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json' },
+         });
+       }
+     },
+   };
+   ```
+
+2. Скопируйте URL воркера и вставьте в `app.js`:
+   ```js
+   const WORKER_BASE = 'https://твой-воркер.workers.dev';
+   ```
+
+Без Worker сайт работает без live-статуса — покажет ссылку на steamstat.us.
 
 ## Источники картинок
 
 | Что | URL |
 |---|---|
-| **Герои** | `https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/<slug>.png` |
-| **Предметы** | `https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/<slug>.png` |
-| **Ранги** | `https://www.opendota.com/assets/images/dota2/rank_icons/rank_icon_<N>.png` (N = 1..8) |
-
-## Как работает live-статус серверов
-
-Вкладка «Серверы» использует официальный метод Steam:
-```
-https://api.steampowered.com/ISteamDirectory/GetCMListForConnect/v1/?cellid=<N>&format=json
-```
-
-`cellid` — идентификатор региона:
-- **1** = US East (Атланта, Стерлинг)
-- **2** = US West (Сиэтл, Лос-Анджелес)
-- **3** = EU (Франкфурт, Амстердам, Лондон)
-- **5** = Азия (Сеул, Токио, Сингапур)
-
-Это **тот же источник**, что использует клиент Steam и steamstat.us. Метод возвращает реальные адреса CM-серверов и их текущую нагрузку.
-
-## Архитектура
-
-- **Фронтенд** — статика, GitHub Pages.
-- **Прокси** — Cloudflare Worker `eye-dota2-proxy.human001user.workers.dev`.
-- **Данные** — OpenDota API + Steam Web API.
-- **Графики** — Chart.js.
+| Герои | `cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/<slug>.png` |
+| Предметы | `cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/items/<slug>.png` |
+| Ранги | `www.opendota.com/assets/images/dota2/rank_icons/rank_icon_<N>.png` |
 
 ## Локальный запуск
 
@@ -54,17 +81,5 @@ python -m http.server 8000
 ```
 
 Открывайте **http://localhost:8000/**.
-
-## Деплой на GitHub Pages
-
-1. Залейте `index.html`, `style.css`, `app.js`, `README.md`.
-2. `Settings → Pages → Source: Deploy from a branch → main / (root)`.
-3. Открывайте https://universal-uniq.github.io/eye-dota2/
-
-## Cloudflare Worker
-
-**URL:** `https://eye-dota2-proxy.human001user.workers.dev`
-
-Код воркера обходит CORS для `api.steampowered.com`. Если нужен полный код — см. предыдущие версии или напишите.
 
 Dota 2 © Valve Corporation. Проект не связан с Valve.
