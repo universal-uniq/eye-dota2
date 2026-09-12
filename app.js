@@ -25,6 +25,7 @@ const PUBLIC_PROXIES = [
 
 const cache = {
   heroMap: {}, heroSlug: {}, heroImg: {}, heroStats: null, items: null,
+  itemById: {},
   leagues: null, _charts: {},
 };
 
@@ -62,24 +63,21 @@ function heroImgUrl(id){
 }
 
 // 🎒 Возвращает список возможных URL картинки предмета (пробуем по порядку)
-function itemImgCandidates(item, key){
+function itemImgCandidates(item, slug){
   const urls = [];
-  const slug = (key || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+  const cleanSlug = (slug || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
 
-  // 1) Основной — готовый путь из OpenDota (item.img)
+  // 1) Готовый путь из OpenDota (item.img)
   if(item && item.img){
     const path = item.img;
     const full = path.startsWith('http') ? path : `${CDN}${path}`;
     urls.push(full);
   }
+  // 2) Новый dota_react путь
+  if(cleanSlug) urls.push(`${CDN}/apps/dota2/images/dota_react/items/${cleanSlug}.png`);
+  // 3) Старый надёжный _lg путь
+  if(cleanSlug) urls.push(`${CDN}/apps/dota2/images/items/${cleanSlug}_lg.png`);
 
-  // 2) Старый надёжный _lg путь Valve
-  if(slug) urls.push(`${CDN}/apps/dota2/images/items/${slug}_lg.png`);
-
-  // 3) Новый dota_react путь
-  if(slug) urls.push(`${CDN}/apps/dota2/images/dota_react/items/${slug}.png`);
-
-  // Дедуп
   return [...new Set(urls)].filter(Boolean);
 }
 
@@ -93,7 +91,6 @@ function on(el, evt, fn){
 // ================================================================
 // ПЕРЕБОР ИСТОЧНИКОВ КАРТИНОК ПРЕДМЕТОВ
 // ================================================================
-// Если первый URL 404 — onerror вызывает эту функцию и пробует следующий.
 window.__tryNextImg = function(img){
   const raw = img.getAttribute('data-srcs');
   if(!raw){ img.style.opacity = '0'; return; }
@@ -101,21 +98,18 @@ window.__tryNextImg = function(img){
   try { list = JSON.parse(raw); } catch { list = []; }
 
   const current = img.src;
-  // Сравниваем по хвосту URL — браузер может нормализовать адрес
   const idx = list.findIndex(u => u === current || current.endsWith(u.split('/').pop()));
   const nextIdx = idx >= 0 ? idx + 1 : 0;
 
   if(nextIdx < list.length){
     img.src = list[nextIdx];
   } else {
-    // Все варианты исчерпаны — показываем заглушку
     img.style.display = 'none';
     const ph = img.parentElement?.querySelector('.ph');
     if(ph) ph.hidden = false;
   }
 };
 
-// Устанавливаем первый рабочий src для всех картинок в .item-card
 function initItemImages(){
   document.querySelectorAll('.item-card img[data-srcs]').forEach(img => {
     if(img.src) return;
@@ -184,9 +178,21 @@ async function loadHeroMap(){
 async function loadItems(){
   if(cache.items) return cache.items;
   try{
-    cache.items = await fetch(`${API}/constants/items`).then(r=>r.json());
-    return cache.items;
-  }catch{ return {}; }
+    const items = await fetch(`${API}/constants/items`).then(r=>r.json());
+    cache.items = items;
+    // 🎯 Строим карту: числовой id → строковый slug ("16" → "branches")
+    cache.itemById = {};
+    for(const [slug, data] of Object.entries(items)){
+      if(data && typeof data === 'object' && data.id != null){
+        cache.itemById[String(data.id)] = slug;
+      }
+    }
+    console.log('[loadItems] предметов:', Object.keys(items).length, '· карта id→slug:', Object.keys(cache.itemById).length);
+    return items;
+  }catch(e){
+    console.error('loadItems', e);
+    return {};
+  }
 }
 
 // ================================================================
@@ -488,7 +494,7 @@ async function renderMeta(app){
 }
 
 // ================================================================
-// СБОРКИ — иконки через перебор источников
+// СБОРКИ — используем карту id→slug для правильных URL
 // ================================================================
 async function renderBuilds(app){
   app.innerHTML = `
@@ -532,10 +538,12 @@ async function renderBuilds(app){
         return `
           <h3 style="margin-top:24px">${title}</h3>
           <div class="item-grid">
-            ${entries.map(([key, count]) => {
-              const itemData = items[key] || {};
-              const urls = itemImgCandidates(itemData, key);
-              const display = itemData.dname || key;
+            ${entries.map(([rawKey, count]) => {
+              // 🎯 rawKey — числовой id предмета, ищем slug ("16" → "branches")
+              const slug = cache.itemById[String(rawKey)] || rawKey;
+              const itemData = items[slug] || {};
+              const urls = itemImgCandidates(itemData, slug);
+              const display = itemData.dname || slug;
               return `
                 <div class="item-card" title="${esc(display)}">
                   <div class="img-wrap">
@@ -559,7 +567,6 @@ async function renderBuilds(app){
         ${renderSection('👑 Лейт-гейм (25+ мин, ≥4000 золота)', pop.late_game_items)}
       `;
 
-      // применяем первый рабочий URL для всех картинок
       setTimeout(initItemImages, 0);
     }catch(e){
       body.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
