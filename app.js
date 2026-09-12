@@ -7,6 +7,7 @@ const CDN = 'https://cdn.cloudflare.steamstatic.com';
 const HERO_CDN = `${CDN}/apps/dota2/images/dota_react/heroes`;
 const ABILITY_CDN = `${CDN}/apps/dota2/images/dota_react/abilities`;
 const RANK_CDN = 'https://www.opendota.com/assets/images/dota2/rank_icons';
+const ABILITY_IDS_URL = 'https://raw.githubusercontent.com/odota/dotaconstants/master/build/ability_ids.json';
 
 const RANKS = {1:'Herald',2:'Guardian',3:'Crusader',4:'Archon',5:'Legend',6:'Ancient',7:'Divine',8:'Immortal'};
 const GAME_MODES = {0:'Unknown',1:'All Pick',2:'Captains Mode',3:'Random Draft',4:'Single Draft',5:'All Random',16:'Captains Draft',18:'Ability Draft',22:'All Pick (Ranked)',23:'Turbo'};
@@ -20,7 +21,7 @@ const PUBLIC_PROXIES = [
 
 const cache = {
   heroMap:{}, heroSlug:{}, heroImg:{}, heroStats:null, items:null,
-  itemById:{}, abilityNames:{}, patches:null, leagues:null, _charts:{},
+  itemById:{}, abilityNames:{}, abilityById:{}, patches:null, leagues:null, _charts:{},
 };
 
 const $  = (sel, root=document) => (root || document).querySelector(sel);
@@ -146,7 +147,7 @@ async function loadHeroMap(){
       cache.heroMap[h.id] = h.localized_name;
       cache.heroSlug[h.id] = (h.name||'').replace('npc_dota_hero_','');
     }
-  }catch(e){ console.warn(e); }
+  }catch(e){ console.warn('loadHeroMap', e); }
 }
 async function loadItems(){
   if(cache.items) return cache.items;
@@ -160,7 +161,7 @@ async function loadItems(){
       }
     }
     return items;
-  }catch{ return {}; }
+  }catch(e){ console.warn('loadItems', e); return {}; }
 }
 async function loadPatches(){
   if(cache.patches) return cache.patches;
@@ -169,12 +170,19 @@ async function loadPatches(){
     return cache.patches;
   }catch{ return []; }
 }
+// Карта "числовой ID способности" → "строковый slug"
 async function loadAbilities(){
-  if(Object.keys(cache.abilityNames).length) return cache.abilityNames;
+  if(Object.keys(cache.abilityById).length) return cache.abilityById;
   try{
-    cache.abilityNames = await fetch(`${API}/constants/abilities`).then(r=>r.json());
-    return cache.abilityNames;
-  }catch{ return {}; }
+    const abilityIds = await fetch(ABILITY_IDS_URL).then(r => r.json());
+    cache.abilityById = abilityIds || {};
+    cache.abilityNames = cache.abilityById;
+    console.log('[loadAbilities] карта id→slug:', Object.keys(cache.abilityById).length);
+    return cache.abilityById;
+  }catch(e){
+    console.error('loadAbilities', e);
+    return {};
+  }
 }
 
 // ================================================================
@@ -196,9 +204,7 @@ function loadSettings(){
     Object.assign(SETTINGS, saved);
   }catch{}
 }
-function saveSettings(){
-  localStorage.setItem('eye-settings', JSON.stringify(SETTINGS));
-}
+function saveSettings(){ localStorage.setItem('eye-settings', JSON.stringify(SETTINGS)); }
 function applySettings(){
   const root = document.documentElement;
   let theme = SETTINGS.theme;
@@ -760,7 +766,6 @@ async function renderStats(app){
       loadItems(),
     ]);
     cache.heroStats = heroStats;
-
     const stats = heroStats.map(h => {
       const picks = ['1','2','3','4','5','6','7','8'].reduce((s,k)=>s+(h[`${k}_pick`]||0),0);
       const wins  = ['1','2','3','4','5','6','7','8'].reduce((s,k)=>s+(h[`${k}_win`]||0),0);
@@ -1424,7 +1429,7 @@ async function renderCompare(app, params){
 }
 
 // ================================================================
-// МАТЧ — полная страница
+// МАТЧ — с таблицей игроков, скиллами, графиками
 // ================================================================
 async function renderMatch(app, params){
   const matchId = params?.[0];
@@ -1458,18 +1463,27 @@ async function renderMatch(app, params){
       const slug = cache.itemById[String(id)];
       return slug ? (items[slug]?.dname || slug) : '';
     };
+
+    // Карта id → slug: "5090" → "death_prophet_carrion_swarm"
+    const abilitySlug = (id) => cache.abilityById?.[String(id)] || '';
     const abilityImg = (id) => {
-      if(!id) return '';
-      return `${ABILITY_CDN}/${id}.png`;
+      const slug = abilitySlug(id);
+      return slug ? `${ABILITY_CDN}/${slug}.png` : '';
     };
 
     const renderAbilities = (player) => {
       const arr = player.ability_upgrades_arr || [];
       if(!arr.length) return '<span style="color:var(--muted);font-size:12px">—</span>';
       return `<div class="abilities-row">
-        ${arr.map((id, i) => `<span class="ability-step" title="Ур. ${i+1}">
-          <img src="${abilityImg(id)}" onerror="this.style.opacity='.3'"/>
-        </span>`).join('')}
+        ${arr.map((id, i) => {
+          const url = abilityImg(id);
+          if(!url){
+            return `<span class="ability-step" title="Ур. ${i+1}" style="font-size:9px">${id}</span>`;
+          }
+          return `<span class="ability-step" title="Ур. ${i+1}">
+            <img src="${url}" onerror="this.style.opacity='.3'"/>
+          </span>`;
+        }).join('')}
       </div>`;
     };
 
@@ -1746,6 +1760,7 @@ function boot(){
   initSettings();
   initLang();
   loadHeroMap().catch(()=>{});
+  loadAbilities().catch(()=>{});
 
   window.addEventListener('hashchange', () => navigate());
 
