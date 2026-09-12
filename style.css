@@ -414,3 +414,33 @@ footer{
   color:var(--muted);font-size:13px;
 }
 footer .small{font-size:11px;margin-top:6px;opacity:.6}
+/* ============================================================
+   ЗАЩИТА ОТ LAYOUT SHIFT (CLS) для lazy-картинок
+   ============================================================ */
+/* Все картинки внутри карточек имеют фиксированное соотношение — размер известен заранее */
+.hero-card img,
+.item-card img,
+.match-row .hero-img,
+.rank-badge img,
+table.data-table img,
+.profile-header img.avatar,
+.player-row img,
+.compare-card img {
+  /* Размеры через aspect-ratio, чтобы браузер знал габариты до загрузки */
+  aspect-ratio: 1 / 1;
+}
+
+/* Иконки героев и аватары — квадратные */
+.profile-header img.avatar,
+.compare-card img,
+.rank-badge img,
+table.data-table img,
+.player-row img {
+  object-fit: cover;
+}
+
+/* Иконки героев в карточках — 16:9, как в Dota 2 */
+.hero-card img {
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
