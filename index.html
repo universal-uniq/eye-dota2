@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru" data-theme="dark" data-accent="orange" data-fontsize="md">
+<html lang="ru" data-theme="dark" data-accent="orange" data-fontsize="md" data-compact="off">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -42,12 +42,11 @@
   </nav>
   <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
     <button id="langToggle" class="theme-toggle" title="RU / EN" aria-label="Сменить язык" style="width:auto;padding:0 12px;font-weight:700">RU</button>
-    <button id="themeToggle" class="theme-toggle" title="Сменить тему" aria-label="Сменить тему">🌙</button>
-    <button id="settingsBtn" class="theme-toggle" title="Настройки" aria-label="Настройки">⚙️</button>
+    <button id="themeToggle" class="theme-toggle" title="Сменить тему">🌙</button>
+    <button id="settingsBtn" class="theme-toggle" title="Настройки">⚙️</button>
   </div>
 </header>
 
-<!-- Модальное окно настроек -->
 <div id="settingsModal" class="modal hidden">
   <div class="modal-backdrop"></div>
   <div class="modal-body">
@@ -68,11 +67,11 @@
     <div class="settings-block">
       <h3 data-i18n="settings_accent">Акцентный цвет</h3>
       <div class="settings-row" id="accentRow">
-        <button class="settings-btn color-btn" data-accent-val="orange" title="Оранжевый" style="--c:#e05a3a">🟠</button>
-        <button class="settings-btn color-btn" data-accent-val="red"    title="Красный"   style="--c:#e24545">🔴</button>
-        <button class="settings-btn color-btn" data-accent-val="blue"   title="Синий"     style="--c:#4a8fe0">🔵</button>
-        <button class="settings-btn color-btn" data-accent-val="green"  title="Зелёный"   style="--c:#4ec26b">🟢</button>
-        <button class="settings-btn color-btn" data-accent-val="purple" title="Фиолетовый" style="--c:#a371f7">🟣</button>
+        <button class="settings-btn color-btn" data-accent-val="orange" title="Оранжевый">🟠</button>
+        <button class="settings-btn color-btn" data-accent-val="red"    title="Красный">🔴</button>
+        <button class="settings-btn color-btn" data-accent-val="blue"   title="Синий">🔵</button>
+        <button class="settings-btn color-btn" data-accent-val="green"  title="Зелёный">🟢</button>
+        <button class="settings-btn color-btn" data-accent-val="purple" title="Фиолетовый">🟣</button>
       </div>
     </div>
 
@@ -103,7 +102,7 @@
 
 <footer>
   <p>Eye Dota 2 · данные: <a href="https://www.opendota.com" target="_blank" rel="noopener">OpenDota</a> · статус: <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us</a></p>
-  <p class="small">Dota 2 — торговая марка Valve Corporation. Сайт не связан с Valve. github.com/universal-uniq/eye-dota2</p>
+  <p class="small">Dota 2 — торговая марка Valve Corporation. Сайт не связан с Valve. https://github.com/universal-uniq/eye-dota2</p>
 </footer>
 
 <script src="lang.js"></script>
