@@ -145,28 +145,38 @@ section{margin-bottom:48px}
 .hero-card .wr{display:block;font-size:11px;color:var(--ok);padding-bottom:8px}
 .hero-card .wr.bad{color:var(--bad)}
 
-/* ==== ITEM CARD (сборки) ==== */
-.item-card{
-  background:var(--bg2);border:1px solid var(--line);border-radius:10px;
-  overflow:hidden;text-align:center;transition:all .15s;
+/* ==== ITEM CARD (сборки) — компактнее ==== */
+.item-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
+  gap:10px;
+  margin-top:14px;
 }
+.item-card{
+  background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+  overflow:hidden;text-align:center;transition:all .15s;
+  position:relative;
+}
+.item-card:hover{border-color:var(--accent);transform:translateY(-2px)}
 .item-card .img-wrap{
   aspect-ratio:1;background:var(--bg3);
   display:flex;align-items:center;justify-content:center;
-  padding:8px;overflow:hidden;
+  padding:6px;overflow:hidden;
 }
 .item-card .img-wrap img{
   width:100%;height:100%;object-fit:contain;display:block;
+  image-rendering:-webkit-optimize-contrast;
 }
 .item-card .img-wrap .ph{
-  font-size:32px;color:var(--muted);
+  font-size:22px;color:var(--muted);
 }
 .item-card .item-name{
-  padding:8px 6px 2px;font-size:12px;font-weight:500;
-  line-height:1.2;min-height:32px;
+  padding:5px 4px 2px;font-size:11px;font-weight:500;
+  line-height:1.15;min-height:26px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .item-card .item-count{
-  display:block;font-size:11px;color:var(--ok);padding-bottom:8px;
+  display:block;font-size:10px;color:var(--ok);padding-bottom:5px;
 }
 
 /* ==== STATS ==== */
