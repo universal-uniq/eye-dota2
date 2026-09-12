@@ -13,9 +13,6 @@ const GAME_MODES = {
   5:'All Random',16:'Captains Draft',18:'Ability Draft',22:'All Pick (Ranked)',23:'Turbo'
 };
 
-// ================================================================
-// ГИБРИДНЫЙ ПРОКСИ ДЛЯ STEAM API
-// ================================================================
 const WORKER_BASE = 'https://eye-dota2-proxy.human001user.workers.dev';
 
 const PUBLIC_PROXIES = [
@@ -26,6 +23,7 @@ const PUBLIC_PROXIES = [
 const cache = {
   heroMap: {}, heroSlug: {}, heroImg: {}, heroStats: null, items: null,
   itemById: {},
+  patches: null,
   leagues: null, _charts: {},
 };
 
@@ -37,7 +35,13 @@ const $$ = (sel, root=document) => [...((root || document).querySelectorAll(sel)
 
 function fmtDate(ts){
   if(!ts) return '—';
-  return new Date(ts*1000).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const d = new Date(typeof ts === 'number' && ts < 1e12 ? ts*1000 : ts);
+  return d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+function fmtDateOnly(ts){
+  if(!ts) return '—';
+  const d = new Date(typeof ts === 'number' && ts < 1e12 ? ts*1000 : ts);
+  return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'long',year:'numeric'});
 }
 function fmtDuration(sec){
   if(!sec) return '0:00';
@@ -45,9 +49,9 @@ function fmtDuration(sec){
   return `${m}:${String(s).padStart(2,'0')}`;
 }
 function rankName(tier){
-  if(!tier) return 'Без ранга';
+  if(!tier) return '—';
   const star = tier%10, name = RANKS[Math.floor(tier/10)];
-  return name ? `${name} ${star}` : 'Без ранга';
+  return name ? `${name} ${star}` : '—';
 }
 function rankImg(tier){
   if(!tier) return '';
@@ -62,22 +66,16 @@ function heroImgUrl(id){
   return slug ? `${HERO_CDN}/${slug}.png` : '';
 }
 
-// 🎒 Возвращает список возможных URL картинки предмета (пробуем по порядку)
 function itemImgCandidates(item, slug){
   const urls = [];
   const cleanSlug = (slug || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
-
-  // 1) Готовый путь из OpenDota (item.img)
   if(item && item.img){
     const path = item.img;
     const full = path.startsWith('http') ? path : `${CDN}${path}`;
     urls.push(full);
   }
-  // 2) Новый dota_react путь
   if(cleanSlug) urls.push(`${CDN}/apps/dota2/images/dota_react/items/${cleanSlug}.png`);
-  // 3) Старый надёжный _lg путь
   if(cleanSlug) urls.push(`${CDN}/apps/dota2/images/items/${cleanSlug}_lg.png`);
-
   return [...new Set(urls)].filter(Boolean);
 }
 
@@ -180,19 +178,38 @@ async function loadItems(){
   try{
     const items = await fetch(`${API}/constants/items`).then(r=>r.json());
     cache.items = items;
-    // 🎯 Строим карту: числовой id → строковый slug ("16" → "branches")
     cache.itemById = {};
     for(const [slug, data] of Object.entries(items)){
       if(data && typeof data === 'object' && data.id != null){
         cache.itemById[String(data.id)] = slug;
       }
     }
-    console.log('[loadItems] предметов:', Object.keys(items).length, '· карта id→slug:', Object.keys(cache.itemById).length);
+    console.log('[loadItems] items:', Object.keys(items).length, '· map:', Object.keys(cache.itemById).length);
     return items;
   }catch(e){
     console.error('loadItems', e);
     return {};
   }
+}
+async function loadPatches(){
+  if(cache.patches) return cache.patches;
+  try{
+    cache.patches = await fetch(`${API}/constants/patch`).then(r=>r.json());
+    return cache.patches;
+  }catch{ return []; }
+}
+
+// ================================================================
+// ЯЗЫК
+// ================================================================
+function initLang(){
+  const saved = localStorage.getItem('eye-lang') || 'ru';
+  window.setLang(saved);
+  const btn = $('#langToggle');
+  on(btn, 'click', () => {
+    const next = (window.__lang === 'ru') ? 'en' : 'ru';
+    window.setLang(next);
+  });
 }
 
 // ================================================================
@@ -229,6 +246,11 @@ const routes = {
   servers: renderServers,
   meta:    renderMeta,
   builds:  renderBuilds,
+  heroes:  renderHeroes,
+  hero:    renderHeroPage,
+  patch:   renderPatch,
+  stats:   renderStats,
+  leaderboard: renderLeaderboard,
   leagues: renderLeagues,
   pro:     renderPro,
   player:  renderPlayer,
@@ -241,6 +263,9 @@ function parseHash(){
   const [route, ...rest] = h.split('/');
   return { route, params: rest };
 }
+
+window.__rerender = function(){ navigate(); };
+
 let navigating = false;
 async function navigate(){
   if(navigating) return;
@@ -252,7 +277,7 @@ async function navigate(){
     const { route, params } = parseHash();
     const app = $('#app');
     if(!app){ navigating=false; return; }
-    app.innerHTML = `<section class="empty-state"><span class="dot loading"></span> Загрузка…</section>`;
+    app.innerHTML = `<section class="empty-state"><span class="dot loading"></span> ${t('loading')}</section>`;
     $$('#mainNav a').forEach(a => a.classList.toggle('active', a.dataset.route === route));
 
     const fn = routes[route] || routes.servers;
@@ -260,7 +285,7 @@ async function navigate(){
       await fn(app, params);
     }catch(e){
       console.error('Route error', route, e);
-      app.innerHTML = `<section class="empty-state error">⚠ Ошибка загрузки: ${esc(e.message||e)}</section>`;
+      app.innerHTML = `<section class="empty-state error">⚠ ${t('error')}: ${esc(e.message||e)}</section>`;
     }
   } finally {
     navigating = false;
@@ -328,18 +353,18 @@ async function renderServers(app){
     <p class="page-sub">
       Live-статус Connection Manager (CM) серверов Valve по регионам.<br>
       <span style="font-size:12px">
-        ℹ Источник: официальный метод <code>GetCMListForConnect</code> — тот же, что использует клиент Steam.
+        ℹ Источник: официальный метод <code>GetCMListForConnect</code>.
         Полный live-статус: <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us ↗</a>
       </span>
     </p>
     <div class="status-summary" id="summary">
-      <span class="dot loading"></span> Запрашиваем список серверов…
+      <span class="dot loading"></span> ${t('loading')}
     </div>
     <div class="grid-3" style="margin-top:24px">
       ${REGIONS.map(r => `
         <article class="region" id="region-${r.cellid}">
           <h3>${r.name}</h3>
-          <div class="region-status"><span class="dot loading"></span> Загрузка…</div>
+          <div class="region-status"><span class="dot loading"></span> ${t('loading')}</div>
           <ul class="server-list" id="list-${r.cellid}"></ul>
         </article>
       `).join('')}
@@ -357,7 +382,7 @@ async function renderServers(app){
 
       if(res.error){
         failedRegions++;
-        if(statusEl) statusEl.innerHTML = `<span class="dot bad"></span> Не удалось получить данные`;
+        if(statusEl) statusEl.innerHTML = `<span class="dot bad"></span> ${t('error')}`;
         if(listEl) listEl.innerHTML = '';
         continue;
       }
@@ -367,17 +392,17 @@ async function renderServers(app){
 
       if(statusEl){
         statusEl.innerHTML = res.alive > 0
-          ? `<span class="dot ok"></span> <b>${res.alive}</b> серверов онлайн · ${res.ping} мс`
-          : `<span class="dot warn"></span> Нет данных`;
+          ? `<span class="dot ok"></span> <b>${res.alive}</b> online · ${res.ping} мс`
+          : `<span class="dot warn"></span> ${t('no_data')}`;
       }
 
       if(listEl){
         const list = res.servers.slice(0, 8);
         listEl.innerHTML = list.length
           ? list.map(addr => `<li><span class="name">${esc(addr)}</span></li>`).join('')
-          : '<li><span class="name" style="opacity:.6">— нет адресов —</span></li>';
+          : `<li><span class="name" style="opacity:.6">— ${t('no_data')} —</span></li>`;
         if(res.servers.length > list.length){
-          listEl.innerHTML += `<li style="text-align:center;color:var(--muted);font-size:11px">…и ещё ${res.servers.length - list.length}</li>`;
+          listEl.innerHTML += `<li style="text-align:center;color:var(--muted);font-size:11px">…+${res.servers.length - list.length}</li>`;
         }
       }
     }
@@ -386,11 +411,11 @@ async function renderServers(app){
     if(!sm) return;
 
     if(totalServers === 0 && failedRegions === REGIONS.length){
-      sm.innerHTML = `<span class="dot bad"></span> Не удалось получить данные. Проверьте статус на <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us</a>`;
+      sm.innerHTML = `<span class="dot bad"></span> ${t('error')}. <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us</a>`;
     } else if(totalServers === 0){
-      sm.innerHTML = `<span class="dot warn"></span> Получен пустой список серверов.`;
+      sm.innerHTML = `<span class="dot warn"></span> ${t('no_data')}`;
     } else {
-      sm.innerHTML = `<span class="dot ok"></span> Получено <b>${totalServers}</b> серверов · активных: <b>${totalAlive}</b>`;
+      sm.innerHTML = `<span class="dot ok"></span> ${totalServers} серверов · активных: <b>${totalAlive}</b>`;
     }
   };
 
@@ -406,12 +431,12 @@ async function renderServers(app){
 // ================================================================
 async function renderMeta(app){
   app.innerHTML = `
-    <h2 class="page-title">Мета патча</h2>
-    <p class="page-sub">Топ героев по винрейту и популярности · данные OpenDota</p>
+    <h2 class="page-title">${t('nav_meta')}</h2>
+    <p class="page-sub">${t('heroes_sub')} · OpenDota</p>
     <div class="filters">
-      <label>Ранг:</label>
+      <label for="metaBracket">Ранг:</label>
       <select id="metaBracket">
-        <option value="all">Все ранги</option>
+        <option value="all">Все</option>
         <option value="1">Herald</option>
         <option value="2">Guardian</option>
         <option value="3">Crusader</option>
@@ -421,11 +446,11 @@ async function renderMeta(app){
         <option value="7">Divine</option>
         <option value="8">Immortal</option>
       </select>
-      <label>Сортировка:</label>
+      <label for="metaSort">Сортировка:</label>
       <select id="metaSort">
         <option value="picks">По популярности</option>
         <option value="wr">По винрейту</option>
-        <option value="contested">По contested (pro)</option>
+        <option value="contested">По contested</option>
       </select>
     </div>
     <div id="metaBody"></div>
@@ -463,8 +488,8 @@ async function renderMeta(app){
       <table class="data-table">
         <thead>
           <tr>
-            <th>#</th><th>Герой</th><th>Атрибут</th><th>Игр</th>
-            <th>Побед</th><th>Winrate</th><th>Pro picks</th><th>Pro bans</th>
+            <th>#</th><th>${t('hero')}</th><th>${t('attribute')}</th><th>${t('games')}</th>
+            <th>${t('wins')}</th><th>${t('winrate')}</th><th>Pro picks</th><th>Pro bans</th>
           </tr>
         </thead>
         <tbody>
@@ -473,7 +498,7 @@ async function renderMeta(app){
             return `
               <tr>
                 <td>${i+1}</td>
-                <td><img src="${heroImgUrl(h.id)}" alt="" loading="lazy"/><span>${esc(h.localized_name)}</span></td>
+                <td><a href="#/hero/${h.id}"><img src="${heroImgUrl(h.id)}" alt="" loading="lazy"/><span>${esc(h.localized_name)}</span></a></td>
                 <td>${esc(h.primary_attr)}</td>
                 <td>${h.picks.toLocaleString('ru-RU')}</td>
                 <td>${h.wins.toLocaleString('ru-RU')}</td>
@@ -494,17 +519,17 @@ async function renderMeta(app){
 }
 
 // ================================================================
-// СБОРКИ — используем карту id→slug для правильных URL
+// СБОРКИ
 // ================================================================
 async function renderBuilds(app){
   app.innerHTML = `
-    <h2 class="page-title">Сборки и популярные предметы</h2>
-    <p class="page-sub">Выберите героя — увидим, что чаще всего покупают на разных этапах игры</p>
+    <h2 class="page-title">${t('builds_title')}</h2>
+    <p class="page-sub">${t('builds_sub')}</p>
     <div class="filters">
-      <label>Герой:</label>
-      <select id="buildHero" style="min-width:220px"><option>Загрузка…</option></select>
+      <label for="buildHero">${t('hero')}:</label>
+      <select id="buildHero" style="min-width:220px"><option>${t('loading')}</option></select>
     </div>
-    <div id="buildBody"><div class="empty-state">Выберите героя</div></div>
+    <div id="buildBody"><div class="empty-state">${t('no_data')}</div></div>
   `;
 
   const heroes = cache.heroStats || await fetch(`${API}/heroStats`).then(r=>r.json());
@@ -522,7 +547,7 @@ async function renderBuilds(app){
     const id = selNow.value;
     const body = $('#buildBody');
     if(!body) return;
-    body.innerHTML = '<div class="empty-state"><span class="dot loading"></span> Загружаем…</div>';
+    body.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
 
     try{
       const [pop, items] = await Promise.all([
@@ -532,14 +557,13 @@ async function renderBuilds(app){
 
       const renderSection = (title, obj) => {
         if(!obj || !Object.keys(obj).length){
-          return `<h3 style="margin-top:24px">${title}</h3><div class="empty-state" style="padding:20px">Нет данных</div>`;
+          return `<h3 style="margin-top:24px">${title}</h3><div class="empty-state" style="padding:20px">${t('no_data')}</div>`;
         }
         const entries = Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0, 12);
         return `
           <h3 style="margin-top:24px">${title}</h3>
           <div class="item-grid">
             ${entries.map(([rawKey, count]) => {
-              // 🎯 rawKey — числовой id предмета, ищем slug ("16" → "branches")
               const slug = cache.itemById[String(rawKey)] || rawKey;
               const itemData = items[slug] || {};
               const urls = itemImgCandidates(itemData, slug);
@@ -561,10 +585,10 @@ async function renderBuilds(app){
       };
 
       body.innerHTML = `
-        ${renderSection('🛒 Стартовая закупка', pop.start_game_items)}
-        ${renderSection('⚔️ Ранняя игра (0–10 мин, ≥700 золота)', pop.early_game_items)}
-        ${renderSection('🛡️ Мид-гейм (10–25 мин, ≥2000 золота)', pop.mid_game_items)}
-        ${renderSection('👑 Лейт-гейм (25+ мин, ≥4000 золота)', pop.late_game_items)}
+        ${renderSection(t('build_start'), pop.start_game_items)}
+        ${renderSection(t('build_early'), pop.early_game_items)}
+        ${renderSection(t('build_mid'), pop.mid_game_items)}
+        ${renderSection(t('build_late'), pop.late_game_items)}
       `;
 
       setTimeout(initItemImages, 0);
@@ -578,6 +602,425 @@ async function renderBuilds(app){
 }
 
 // ================================================================
+// ГЕРОИ — поиск и список
+// ================================================================
+async function renderHeroes(app){
+  const heroes = cache.heroStats || await fetch(`${API}/heroStats`).then(r=>r.json());
+  cache.heroStats = heroes;
+
+  app.innerHTML = `
+    <h2 class="page-title">${t('heroes_title')}</h2>
+    <p class="page-sub">${t('heroes_sub')}</p>
+    <div class="filters" style="margin-bottom:20px">
+      <label for="heroSearch">${t('search')}:</label>
+      <input id="heroSearch" type="text" placeholder="${t('heroes_search')}"
+             style="flex:1;max-width:420px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg3);color:var(--text);outline:none"/>
+    </div>
+    <div id="heroesBody"></div>
+  `;
+
+  const renderHeroesList = (query='') => {
+    const q = query.toLowerCase().trim();
+    const filtered = heroes.filter(h => !q ||
+      (h.localized_name||'').toLowerCase().includes(q) ||
+      (h.name||'').toLowerCase().includes(q)
+    );
+
+    const body = $('#heroesBody');
+    if(!body) return;
+
+    if(!filtered.length){
+      body.innerHTML = `<div class="empty-state">${t('heroes_no_results')}</div>`;
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+        ${filtered.map(h => {
+          const img = heroImgUrl(h.id);
+          return `
+            <a class="hero-card" href="#/hero/${h.id}">
+              <img src="${img}" alt="${esc(h.localized_name)}" loading="lazy"/>
+              <div class="name">${esc(h.localized_name)}</div>
+              <span class="wr">${esc(h.primary_attr)} · ${esc(h.attack_type)}</span>
+            </a>
+          `;
+        }).join('')}
+      </div>
+    `;
+  };
+
+  on($('#heroSearch'), 'input', e => renderHeroesList(e.target.value));
+  renderHeroesList();
+}
+
+// ================================================================
+// HERO-PAGE
+// ================================================================
+async function renderHeroPage(app, params){
+  const heroId = Number(params?.[0]);
+  if(!heroId){
+    app.innerHTML = `<div class="empty-state error">${t('not_found')}</div>`;
+    return;
+  }
+
+  app.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
+
+  try{
+    const [heroStats, matchups, durations, players, itemPop] = await Promise.all([
+      cache.heroStats ? Promise.resolve(cache.heroStats) : fetch(`${API}/heroStats`).then(r=>r.json()),
+      fetch(`${API}/heroes/${heroId}/matchups`).then(r=>r.json()).catch(()=>[]),
+      fetch(`${API}/heroes/${heroId}/durations`).then(r=>r.json()).catch(()=>[]),
+      fetch(`${API}/heroes/${heroId}/players`).then(r=>r.json()).catch(()=>[]),
+      fetch(`${API}/heroes/${heroId}/itemPopularity`).then(r=>r.json()).catch(()=>({})),
+    ]);
+
+    cache.heroStats = heroStats;
+    const hero = heroStats.find(h => h.id === heroId);
+    if(!hero) throw new Error(t('not_found'));
+
+    const items = await loadItems();
+    const itemsObj = itemPop || {};
+
+    // Топ контр-пиков — герои, которые чаще всего выигрывают против нас
+    const topMatchups = [...matchups]
+      .filter(m => m.games_played >= 20)
+      .map(m => ({...m, wr: (m.wins / m.games_played) * 100}))
+      .sort((a,b) => b.wr - a.wr)
+      .slice(0, 8);
+
+    // Топ-игроков на герое (по количеству матчей)
+    const topPlayers = [...(Array.isArray(players) ? players : [])]
+      .sort((a,b) => (b.games||0) - (a.games||0))
+      .slice(0, 10);
+
+    // Сборка
+    const renderItemsRow = (obj) => {
+      if(!obj || !Object.keys(obj).length) return `<div class="empty-state" style="padding:12px;font-size:12px">${t('no_data')}</div>`;
+      const entries = Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0, 8);
+      return `<div class="item-grid">${entries.map(([rawKey, count]) => {
+        const slug = cache.itemById[String(rawKey)] || rawKey;
+        const itemData = items[slug] || {};
+        const urls = itemImgCandidates(itemData, slug);
+        const display = itemData.dname || slug;
+        return `
+          <div class="item-card" title="${esc(display)}">
+            <div class="img-wrap">
+              <img data-srcs='${JSON.stringify(urls)}' alt="${esc(display)}"
+                   onerror="window.__tryNextImg && window.__tryNextImg(this)"/>
+              <span class="ph" hidden>❔</span>
+            </div>
+            <div class="item-name">${esc(display)}</div>
+            <span class="item-count">× ${count.toLocaleString('ru-RU')}</span>
+          </div>`;
+      }).join('')}</div>`;
+    };
+
+    // Позиции — считаем по lane_role
+    const laneRoles = {1:'Safe Lane',2:'Mid',3:'Off Lane',4:'Jungle'};
+    const positions = Object.entries(hero).reduce((acc, [k,v]) => {
+      const m = k.match(/^(\d)_pick$/);
+      if(m) acc[m[1]] = (acc[m[1]]||0) + (v||0);
+      return acc;
+    }, {});
+    const topPositions = Object.entries(positions)
+      .sort((a,b) => b[1]-a[1]).slice(0, 3);
+
+    app.innerHTML = `
+      <div class="profile-header">
+        <img class="avatar" style="border-radius:14px;width:110px;height:110px" src="${heroImgUrl(heroId)}" alt=""/>
+        <div class="info">
+          <h3>${esc(hero.localized_name)}</h3>
+          <div class="meta">
+            <span>${esc(hero.primary_attr)}</span>
+            <span>${esc(hero.attack_type)}</span>
+            <span>${(hero.roles||[]).join(' · ')}</span>
+          </div>
+          <div class="meta" style="margin-top:8px">
+            <a href="https://www.opendota.com/heroes/${heroId}" target="_blank" rel="noopener">${t('hero_open_opendota')}</a>
+            <a href="https://dota2protracker.com/hero/${(hero.name||'').replace('npc_dota_hero_','')}" target="_blank" rel="noopener">Dota2ProTracker ↗</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card"><span class="val">${(hero['1_pick']+hero['2_pick']+hero['3_pick']+hero['4_pick']+hero['5_pick']+hero['6_pick']+hero['7_pick']+hero['8_pick']||0).toLocaleString('ru-RU')}</span><span class="lbl">${t('picks')}</span></div>
+        <div class="stat-card"><span class="val green">${hero.pro_win||0}</span><span class="lbl">pro ${t('wins')}</span></div>
+        <div class="stat-card"><span class="val red">${hero.pro_ban||0}</span><span class="lbl">pro ${t('bans')}</span></div>
+        <div class="stat-card"><span class="val">${hero.base_health||0}</span><span class="lbl">HP</span></div>
+        <div class="stat-card"><span class="val">${hero.base_attack_min||0}–${hero.base_attack_max||0}</span><span class="lbl">Атака</span></div>
+        <div class="stat-card"><span class="val">${hero.move_speed||0}</span><span class="lbl">Скорость</span></div>
+        <div class="stat-card"><span class="val">${hero.base_armor||0}</span><span class="lbl">Броня</span></div>
+      </div>
+
+      <h3 style="margin-top:32px">🎯 ${t('heroes_matchups')}</h3>
+      <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+        ${topMatchups.length ? topMatchups.map(m => `
+          <a class="hero-card" href="#/hero/${m.hero_id}">
+            <img src="${heroImgUrl(m.hero_id)}" alt=""/>
+            <div class="name">${esc(heroName(m.hero_id))}</div>
+            <span class="wr ${m.wr >= 55 ? '' : 'bad'}">${m.wr.toFixed(1)}% · ${m.games_played} ${t('games')}</span>
+          </a>
+        `).join('') : `<div class="empty-state">${t('no_data')}</div>`}
+      </div>
+
+      <h3 style="margin-top:32px">📊 ${t('hero_stats')}</h3>
+      <div class="stat-grid">
+        <div class="stat-card"><span class="val">${topPositions.map(([p,n])=>`${laneRoles[p]||p}: ${n}`).join(' · ')||'—'}</span><span class="lbl">${t('heroes_positions')}</span></div>
+      </div>
+
+      <h3 style="margin-top:32px">🛒 ${t('hero_avg_build')}</h3>
+      <h4 style="margin-top:14px;font-size:13px;color:var(--muted)">${t('build_start')}</h4>
+      ${renderItemsRow(itemsObj.start_game_items)}
+      <h4 style="margin-top:14px;font-size:13px;color:var(--muted)">${t('build_early')}</h4>
+      ${renderItemsRow(itemsObj.early_game_items)}
+      <h4 style="margin-top:14px;font-size:13px;color:var(--muted)">${t('build_mid')}</h4>
+      ${renderItemsRow(itemsObj.mid_game_items)}
+      <h4 style="margin-top:14px;font-size:13px;color:var(--muted)">${t('build_late')}</h4>
+      ${renderItemsRow(itemsObj.late_game_items)}
+
+      <h3 style="margin-top:32px">🏆 ${t('hero_pro_players')}</h3>
+      <table class="data-table">
+        <thead><tr><th>#</th><th>${t('leaderboard_name')}</th><th>${t('games')}</th><th>${t('wins')}</th></tr></thead>
+        <tbody>
+          ${topPlayers.length ? topPlayers.map((p,i) => `
+            <tr>
+              <td>${i+1}</td>
+              <td><a href="#/player/${p.account_id}">${esc(p.personaname || p.name || 'Player '+p.account_id)}</a></td>
+              <td>${(p.games||0).toLocaleString('ru-RU')}</td>
+              <td>${(p.win||0).toLocaleString('ru-RU')}</td>
+            </tr>
+          `).join('') : `<tr><td colspan="4"><div class="empty-state">${t('no_data')}</div></td></tr>`}
+        </tbody>
+      </table>
+
+      <h3 style="margin-top:32px">⏱ ${t('hero_durations')}</h3>
+      <div class="chart-wrap">
+        <div class="chart-canvas-wrap"><canvas id="chartHeroDur"></canvas></div>
+      </div>
+    `;
+
+    // График длительности
+    setTimeout(() => {
+      const canvas = $('#chartHeroDur');
+      if(!canvas || !durations?.length) return;
+      const labels = durations.map(d => `${Math.floor(d.duration_bin/60)}м`);
+      const games = durations.map(d => d.games_played);
+      const wins = durations.map(d => d.wins);
+      if(cache._charts.heroDur){ try{ cache._charts.heroDur.destroy(); }catch{} }
+      cache._charts.heroDur = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: t('games'), data: games, backgroundColor: '#a371f7' },
+            { label: t('wins'),  data: wins,  backgroundColor: '#3fb950' },
+          ],
+        },
+        options: { responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{ position:'top' } } },
+      });
+      setTimeout(initItemImages, 0);
+    }, 60);
+
+  }catch(e){
+    app.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
+  }
+}
+
+// ================================================================
+// ПАТЧИ
+// ================================================================
+async function renderPatch(app){
+  app.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
+
+  try{
+    const patches = await loadPatches();
+    if(!patches || !patches.length) throw new Error(t('no_data'));
+
+    // Сортируем по id (новые сверху)
+    const sorted = [...patches].sort((a,b) => (b.id||0) - (a.id||0));
+    const current = sorted[0];
+
+    // Ссылки на нотсы Valve
+    const patchLink = (id) => `https://www.dota2.com/patches/${id}`;
+
+    app.innerHTML = `
+      <h2 class="page-title">${t('patch_title')}</h2>
+      <p class="page-sub">${t('patch_sub')}</p>
+
+      <div class="profile-header" style="margin-bottom:24px">
+        <div style="font-size:64px">🏆</div>
+        <div class="info">
+          <h3>${t('patch_current')}: <span style="color:var(--accent)">${esc(current.name||('Patch '+current.id))}</span></h3>
+          <div class="meta">
+            <span>${t('patch_date')}: ${current.date ? fmtDateOnly(current.date) : '—'}</span>
+            <span>ID: ${current.id}</span>
+          </div>
+          <div class="meta" style="margin-top:8px">
+            <a href="${patchLink(current.id)}" target="_blank" rel="noopener">${t('patch_read_notes')}</a>
+            <a href="https://www.dota2.com/patches" target="_blank" rel="noopener">Все патчи ↗</a>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="margin-top:32px">${t('patch_recent')}</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>#</th><th>${t('patch_name')}</th><th>${t('patch_date')}</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sorted.slice(0, 20).map((p,i) => `
+            <tr>
+              <td>${i+1}</td>
+              <td><b>${esc(p.name||('Patch '+p.id))}</b></td>
+              <td>${p.date ? fmtDateOnly(p.date) : '—'}</td>
+              <td><a href="${patchLink(p.id)}" target="_blank" rel="noopener" style="font-size:13px">${t('patch_read_notes')}</a></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }catch(e){
+    app.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
+  }
+}
+
+// ================================================================
+// ГЛОБАЛЬНАЯ СТАТА
+// ================================================================
+async function renderStats(app){
+  app.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
+
+  try{
+    const [heroStats, totals, publicMatches] = await Promise.all([
+      cache.heroStats ? Promise.resolve(cache.heroStats) : fetch(`${API}/heroStats`).then(r=>r.json()),
+      fetch(`${API}/totals`).then(r=>r.json()).catch(()=>[]),
+      fetch(`${API}/publicMatches`).then(r=>r.json()).catch(()=>[]),
+    ]);
+    cache.heroStats = heroStats;
+
+    // Топ по пикам и банам за месяц (все ранги)
+    const stats = heroStats.map(h => {
+      const picks = ['1','2','3','4','5','6','7','8'].reduce((s,k)=>s+(h[`${k}_pick`]||0),0);
+      const wins  = ['1','2','3','4','5','6','7','8'].reduce((s,k)=>s+(h[`${k}_win`]||0),0);
+      return { id: h.id, name: h.localized_name, img: heroImgUrl(h.id), picks, wins, wr: picks?(wins/picks)*100:0, pro_ban: h.pro_ban||0 };
+    });
+
+    const topPicks = [...stats].sort((a,b)=>b.picks-a.picks).slice(0, 10);
+    const topBans  = [...heroStats].sort((a,b)=>(b.pro_ban||0)-(a.pro_ban||0)).slice(0, 10)
+      .map(h => ({ id: h.id, name: h.localized_name, img: heroImgUrl(h.id), pro_ban: h.pro_ban||0 }));
+
+    // Средняя длительность из publicMatches
+    const durations = (publicMatches||[]).map(m => m.duration||0).filter(d => d>0);
+    const avgDur = durations.length ? Math.round(durations.reduce((a,b)=>a+b,0) / durations.length) : 0;
+
+    const totalMatches = stats.reduce((s,h)=>s+h.picks,0);
+
+    app.innerHTML = `
+      <h2 class="page-title">${t('stats_title')}</h2>
+      <p class="page-sub">${t('stats_sub')}</p>
+
+      <div class="stat-grid">
+        <div class="stat-card"><span class="val accent">${totalMatches.toLocaleString('ru-RU')}</span><span class="lbl">${t('stats_matches_24h')}</span></div>
+        <div class="stat-card"><span class="val">${fmtDuration(avgDur)}</span><span class="lbl">${t('stats_avg_duration')}</span></div>
+        <div class="stat-card"><span class="val">${heroStats.length}</span><span class="lbl">${t('stats_total_heroes')}</span></div>
+        <div class="stat-card"><span class="val">${Object.keys(cache.items||{}).length || '—'}</span><span class="lbl">${t('stats_total_items')}</span></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px" class="stats-cols">
+        <div>
+          <h3>📈 ${t('stats_top_picks')}</h3>
+          <table class="data-table">
+            <thead><tr><th>#</th><th>${t('hero')}</th><th>${t('picks')}</th><th>${t('winrate')}</th></tr></thead>
+            <tbody>
+              ${topPicks.map((h,i) => `
+                <tr>
+                  <td>${i+1}</td>
+                  <td><a href="#/hero/${h.id}"><img src="${h.img}" alt=""/><span>${esc(h.name)}</span></a></td>
+                  <td>${h.picks.toLocaleString('ru-RU')}</td>
+                  <td class="wr-cell ${h.wr>=50?'good':'bad'}">${h.wr.toFixed(1)}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3>🚫 ${t('stats_top_bans')}</h3>
+          <table class="data-table">
+            <thead><tr><th>#</th><th>${t('hero')}</th><th>Pro ${t('bans')}</th></tr></thead>
+            <tbody>
+              ${topBans.map((h,i) => `
+                <tr>
+                  <td>${i+1}</td>
+                  <td><a href="#/hero/${h.id}"><img src="${h.img}" alt=""/><span>${esc(h.name)}</span></a></td>
+                  <td>${h.pro_ban}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+  }catch(e){
+    app.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
+  }
+}
+
+// ================================================================
+// ТОП-100 ЛИДЕРБОРДА
+// ================================================================
+async function renderLeaderboard(app){
+  app.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
+
+  try{
+    const players = await fetch(`${API}/topPlayers`).then(r=>r.json()).catch(()=>[]);
+    if(!Array.isArray(players) || !players.length) throw new Error(t('no_data'));
+
+    const top = [...players].sort((a,b)=>(b.computed_mmr||0) - (a.computed_mmr||0)).slice(0, 100);
+
+    app.innerHTML = `
+      <h2 class="page-title">${t('leaderboard_title')}</h2>
+      <p class="page-sub">${t('leaderboard_sub')}</p>
+
+      <table class="data-table" style="margin-top:20px">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>${t('leaderboard_name')}</th>
+            <th>${t('rank')}</th>
+            <th>${t('leaderboard_rating')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${top.map((p, i) => {
+            const rImg = rankImg(p.rank_tier);
+            return `
+              <tr>
+                <td><b>${i+1}</b></td>
+                <td>
+                  <a href="#/player/${p.account_id}" style="display:flex;align-items:center;gap:8px">
+                    ${p.avatar ? `<img src="${p.avatar}" alt="" style="width:32px;height:32px;border-radius:50%"/>` : ''}
+                    <span>${esc(p.personaname || p.name || ('Player '+p.account_id))}</span>
+                  </a>
+                </td>
+                <td>${rImg ? `<img src="${rImg}" alt="" style="width:32px;height:auto;border-radius:0;margin:0"/>` : '—'} ${esc(rankName(p.rank_tier))}</td>
+                <td><b>${p.computed_mmr || '—'}</b></td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+
+  }catch(e){
+    app.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
+  }
+}
+
+// ================================================================
 // ЛИГИ
 // ================================================================
 async function renderLeagues(app){
@@ -585,10 +1028,10 @@ async function renderLeagues(app){
     <h2 class="page-title">Лиги и турниры</h2>
     <p class="page-sub">Список лиг, по которым есть данные в OpenDota</p>
     <div class="filters">
-      <label>Поиск:</label>
+      <label for="leagueSearch">${t('search')}:</label>
       <input id="leagueSearch" type="text" placeholder="Название лиги…" style="flex:1;max-width:320px;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg3);color:var(--text);outline:none"/>
     </div>
-    <div id="leaguesBody"><div class="empty-state"><span class="dot loading"></span> Загружаем лиги…</div></div>
+    <div id="leaguesBody"><div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div></div>
   `;
 
   try{
@@ -607,13 +1050,13 @@ async function renderLeagues(app){
         ${show.map(l => `
           <div class="league-row">
             <div>
-              <div class="lname">${esc(l.name||'Без названия')}</div>
+              <div class="lname">${esc(l.name||'—')}</div>
               <div class="lmeta">ID ${l.leagueid}${l.tier ? ' · tier: '+esc(l.tier) : ''}</div>
             </div>
             <a href="https://www.opendota.com/leagues/${l.leagueid}" target="_blank" rel="noopener" style="font-size:13px">Матчи ↗</a>
           </div>
         `).join('')}
-      ` : '<div class="empty-state">Ничего не найдено</div>';
+      ` : `<div class="empty-state">${t('no_data')}</div>`;
     };
 
     on($('#leagueSearch'), 'input', e => render(e.target.value));
@@ -629,9 +1072,9 @@ async function renderLeagues(app){
 // ================================================================
 async function renderPro(app){
   app.innerHTML = `
-    <h2 class="page-title">Про-сцена</h2>
-    <p class="page-sub">Последние матчи про-игроков и профессиональные команды</p>
-    <div id="proBody"><div class="empty-state"><span class="dot loading"></span> Загружаем…</div></div>
+    <h2 class="page-title">${t('nav_pro')}</h2>
+    <p class="page-sub">Последние матчи про-игроков</p>
+    <div id="proBody"><div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div></div>
   `;
 
   try{
@@ -660,20 +1103,18 @@ async function renderPro(app){
               </div>
               <div class="match-info">
                 <span class="hero-name">${esc(m.radiant_name||'Radiant')} vs ${esc(m.dire_name||'Dire')}</span>
-                <span class="match-meta">
-                  ${esc(m.league_name||'—')} · ${dur} · ${m.radiant_score||0}:${m.dire_score||0}
-                </span>
+                <span class="match-meta">${esc(m.league_name||'—')} · ${dur} · ${m.radiant_score||0}:${m.dire_score||0}</span>
               </div>
               <div class="kda">
                 <div class="kda-val">${m.match_id}</div>
-                <div class="result">Детали →</div>
+                <div class="result">→</div>
               </div>
             </a>
           `;
         }).join('')}
       </div>
 
-      <h3 style="margin-top:36px">🏆 Команды в топе</h3>
+      <h3 style="margin-top:36px">🏆 Топ команд</h3>
       <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(180px,1fr))">
         ${topTeams.map(([id,name]) => `
           <a class="hero-card" href="https://www.opendota.com/teams/${id}" target="_blank" rel="noopener"
@@ -691,23 +1132,20 @@ async function renderPro(app){
 }
 
 // ================================================================
-// ПРОФИЛЬ ИГРОКА
+// ПРОФИЛЬ
 // ================================================================
 async function renderPlayer(app, params){
   const presetId = params?.[0] || '';
 
   app.innerHTML = `
-    <h2 class="page-title">Профиль игрока</h2>
-    <p class="page-sub">
-      Вставьте account_id, ссылку на Steam, Steam64, Dotabuff или OpenDota — мы сами определим ID.
-    </p>
+    <h2 class="page-title">${t('nav_player')}</h2>
+    <p class="page-sub">Steam ID, Steam64, Dotabuff, OpenDota — определим сами.</p>
     <form class="search-form" id="playerForm">
-      <input id="playerInput" placeholder="например: 88141661 или ссылка на Steam" autocomplete="off" value="${esc(presetId)}"/>
-      <button type="submit">Найти</button>
+      <input id="playerInput" placeholder="88141661 / ссылка на Steam" autocomplete="off" value="${esc(presetId)}"/>
+      <button type="submit">${t('search')}</button>
     </form>
-    <div class="search-hint">Steam64 автоматически конвертируется в Steam32 (account_id).</div>
     <div class="quick-links">
-      <span>Быстрый переход:</span>
+      <span>Быстро:</span>
       <button data-id="88141661">Dendi</button>
       <button data-id="86745912">Miracle-</button>
       <button data-id="111620041">SumaiL</button>
@@ -724,14 +1162,14 @@ async function renderPlayer(app, params){
   async function doSearch(raw){
     const id = extractAccountId(raw);
     if(!id || typeof id === 'object'){
-      if(result) result.innerHTML = `<div class="empty-state error">⚠ Не удалось определить account_id. Попробуйте числовой ID.</div>`;
+      if(result) result.innerHTML = `<div class="empty-state error">⚠ ${t('not_found')}</div>`;
       return;
     }
     await showPlayer(id);
   }
 
   async function showPlayer(accountId){
-    if(result) result.innerHTML = '<div class="empty-state"><span class="dot loading"></span> Загружаем профиль…</div>';
+    if(result) result.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
     try{
       const [profile, wl, heroes, matches, totals] = await Promise.all([
         fetch(`${API}/players/${accountId}`).then(r=>r.json()),
@@ -741,8 +1179,7 @@ async function renderPlayer(app, params){
         fetch(`${API}/players/${accountId}/totals`).then(r=>r.json()).catch(()=>[]),
       ]);
 
-      if(!profile?.profile) throw new Error('Игрок не найден или профиль приватный.');
-
+      if(!profile?.profile) throw new Error(t('not_found'));
       renderPlayerContent(result, profile, wl, heroes, matches, totals);
       history.replaceState(null, '', `#/player/${accountId}`);
     }catch(e){
@@ -783,20 +1220,20 @@ function renderPlayerContent(cont, profile, wl, heroes, matches, totals){
       </div>
       ${rImg ? `
         <div class="rank-badge">
-          <img src="${rImg}" alt="${esc(rankName(rankTier))}" onerror="this.style.display='none'"/>
-          <div class="rank-txt"><b>${esc(rankName(rankTier))}</b>rank tier ${rankTier}</div>
+          <img src="${rImg}" alt="" onerror="this.style.display='none'"/>
+          <div class="rank-txt"><b>${esc(rankName(rankTier))}</b>tier ${rankTier}</div>
         </div>
       ` : ''}
     </div>
 
     <div class="stat-grid">
-      <div class="stat-card"><span class="val">${(wl.win+wl.lose).toLocaleString('ru-RU')}</span><span class="lbl">матчей</span></div>
-      <div class="stat-card"><span class="val green">${wl.win.toLocaleString('ru-RU')}</span><span class="lbl">побед</span></div>
-      <div class="stat-card"><span class="val red">${wl.lose.toLocaleString('ru-RU')}</span><span class="lbl">поражений</span></div>
-      <div class="stat-card"><span class="val ${parseFloat(winrate)>=50?'green':'red'}">${winrate}%</span><span class="lbl">winrate</span></div>
-      <div class="stat-card"><span class="val">${getTotal('kills')}</span><span class="lbl">убийств</span></div>
-      <div class="stat-card"><span class="val">${getTotal('deaths')}</span><span class="lbl">смертей</span></div>
-      <div class="stat-card"><span class="val">${getTotal('assists')}</span><span class="lbl">ассистов</span></div>
+      <div class="stat-card"><span class="val">${(wl.win+wl.lose).toLocaleString('ru-RU')}</span><span class="lbl">${t('matches')}</span></div>
+      <div class="stat-card"><span class="val green">${wl.win.toLocaleString('ru-RU')}</span><span class="lbl">${t('wins')}</span></div>
+      <div class="stat-card"><span class="val red">${wl.lose.toLocaleString('ru-RU')}</span><span class="lbl">${t('losses')}</span></div>
+      <div class="stat-card"><span class="val ${parseFloat(winrate)>=50?'green':'red'}">${winrate}%</span><span class="lbl">${t('winrate')}</span></div>
+      <div class="stat-card"><span class="val">${getTotal('kills')}</span><span class="lbl">${t('kills')}</span></div>
+      <div class="stat-card"><span class="val">${getTotal('deaths')}</span><span class="lbl">${t('deaths')}</span></div>
+      <div class="stat-card"><span class="val">${getTotal('assists')}</span><span class="lbl">${t('assists')}</span></div>
     </div>
 
     <div class="tabs">
@@ -815,7 +1252,7 @@ function renderPlayerContent(cont, profile, wl, heroes, matches, totals){
               <img class="hero-img" src="${heroImgUrl(m.hero_id)}" alt="" loading="lazy"/>
               <div class="match-info">
                 <span class="hero-name">${esc(heroName(m.hero_id))}</span>
-                <span class="match-meta">${won?'Победа':'Поражение'} · ${fmtDuration(m.duration)} · ${GAME_MODES[m.game_mode]||'Mode '+m.game_mode} · ${fmtDate(m.start_time)}</span>
+                <span class="match-meta">${won?'Победа':'Поражение'} · ${fmtDuration(m.duration)} · ${fmtDate(m.start_time)}</span>
               </div>
               <div class="kda">
                 <div class="kda-val"><span class="k">${m.kills}</span> / <span class="d">${m.deaths}</span> / ${m.assists}</div>
@@ -823,21 +1260,21 @@ function renderPlayerContent(cont, profile, wl, heroes, matches, totals){
               </div>
             </a>
           `;
-        }).join('') : '<div class="empty-state">Нет матчей</div>'}
+        }).join('') : `<div class="empty-state">${t('no_data')}</div>`}
       </div>
     </div>
 
     <div class="tab-panel" id="tab-heroes">
       ${heroes?.length ? `
         <table class="data-table">
-          <thead><tr><th>Герой</th><th>Игр</th><th>Побед</th><th>Winrate</th></tr></thead>
+          <thead><tr><th>${t('hero')}</th><th>${t('games')}</th><th>${t('wins')}</th><th>${t('winrate')}</th></tr></thead>
           <tbody>
             ${heroes.map(h => {
               const wr = h.games ? (h.win/h.games*100) : 0;
               const cls = wr>=50 ? 'good' : 'bad';
               return `
                 <tr>
-                  <td><img src="${heroImgUrl(h.hero_id)}" alt=""/><span>${esc(heroName(h.hero_id))}</span></td>
+                  <td><a href="#/hero/${h.hero_id}"><img src="${heroImgUrl(h.hero_id)}" alt=""/><span>${esc(heroName(h.hero_id))}</span></a></td>
                   <td>${h.games}</td>
                   <td>${h.win}</td>
                   <td class="wr-cell ${cls}">${wr.toFixed(1)}%</td>
@@ -846,16 +1283,16 @@ function renderPlayerContent(cont, profile, wl, heroes, matches, totals){
             }).join('')}
           </tbody>
         </table>
-      ` : '<div class="empty-state">Нет данных</div>'}
+      ` : `<div class="empty-state">${t('no_data')}</div>`}
     </div>
 
     <div class="tab-panel" id="tab-charts">
       <div class="chart-wrap">
-        <h3>GPM / XPM за последние матчи</h3>
+        <h3>GPM / XPM</h3>
         <div class="chart-canvas-wrap"><canvas id="chartGpmXpm"></canvas></div>
       </div>
       <div class="chart-wrap">
-        <h3>K / D / A по матчам</h3>
+        <h3>K / D / A</h3>
         <div class="chart-canvas-wrap"><canvas id="chartKda"></canvas></div>
       </div>
     </div>
@@ -885,13 +1322,10 @@ function drawCharts(matches){
     if(cache._charts.gpm){ try{ cache._charts.gpm.destroy(); }catch{} }
     cache._charts.gpm = new Chart(gpmXpm, {
       type:'line',
-      data:{
-        labels,
-        datasets:[
-          { label:'GPM', data:sorted.map(m=>m.gold_per_min||0), borderColor:'#e05a3a', backgroundColor:'rgba(224,90,58,.15)', tension:.3, fill:true, pointRadius:2 },
-          { label:'XPM', data:sorted.map(m=>m.xp_per_min||0), borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.15)', tension:.3, fill:true, pointRadius:2 },
-        ],
-      },
+      data:{ labels, datasets:[
+        { label:'GPM', data:sorted.map(m=>m.gold_per_min||0), borderColor:'#e05a3a', backgroundColor:'rgba(224,90,58,.15)', tension:.3, fill:true, pointRadius:2 },
+        { label:'XPM', data:sorted.map(m=>m.xp_per_min||0), borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.15)', tension:.3, fill:true, pointRadius:2 },
+      ]},
       options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{ position:'top' } } },
     });
   }
@@ -901,14 +1335,11 @@ function drawCharts(matches){
     if(cache._charts.kda){ try{ cache._charts.kda.destroy(); }catch{} }
     cache._charts.kda = new Chart(kda, {
       type:'bar',
-      data:{
-        labels,
-        datasets:[
-          { label:'Kills',   data:sorted.map(m=>m.kills||0),   backgroundColor:'#3fb950' },
-          { label:'Deaths',  data:sorted.map(m=>m.deaths||0),  backgroundColor:'#f85149' },
-          { label:'Assists', data:sorted.map(m=>m.assists||0), backgroundColor:'#a371f7' },
-        ],
-      },
+      data:{ labels, datasets:[
+        { label:'Kills',   data:sorted.map(m=>m.kills||0),   backgroundColor:'#3fb950' },
+        { label:'Deaths',  data:sorted.map(m=>m.deaths||0),  backgroundColor:'#f85149' },
+        { label:'Assists', data:sorted.map(m=>m.assists||0), backgroundColor:'#a371f7' },
+      ]},
       options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{ position:'top' } } },
     });
   }
@@ -922,18 +1353,18 @@ async function renderCompare(app, params){
   const presetB = params?.[1] || '';
 
   app.innerHTML = `
-    <h2 class="page-title">Сравнение игроков</h2>
-    <p class="page-sub">Введите двух игроков — сравним их статистику side-by-side</p>
+    <h2 class="page-title">${t('nav_compare')}</h2>
+    <p class="page-sub">Введите двух игроков</p>
     <div class="compare-grid">
       <div class="compare-card">
         <form class="search-form" id="formA" style="margin:0">
-          <input id="inputA" placeholder="Игрок A" value="${esc(presetA)}"/>
+          <input id="inputA" placeholder="A" value="${esc(presetA)}"/>
         </form>
         <div id="cardA" style="margin-top:14px"></div>
       </div>
       <div class="compare-card">
         <form class="search-form" id="formB" style="margin:0">
-          <input id="inputB" placeholder="Игрок B" value="${esc(presetB)}"/>
+          <input id="inputB" placeholder="B" value="${esc(presetB)}"/>
         </form>
         <div id="cardB" style="margin-top:14px"></div>
       </div>
@@ -947,30 +1378,25 @@ async function renderCompare(app, params){
     const id = extractAccountId(raw);
     const card = $(`#card${which}`);
     if(!id || typeof id==='object'){
-      if(card) card.innerHTML = '<div class="empty-state error">⚠ Не удалось определить ID</div>';
+      if(card) card.innerHTML = `<div class="empty-state error">⚠ ${t('not_found')}</div>`;
       return null;
     }
-    if(card) card.innerHTML = '<div class="empty-state"><span class="dot loading"></span> Загрузка…</div>';
+    if(card) card.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
     try{
       const [profile, wl] = await Promise.all([
         fetch(`${API}/players/${id}`).then(r=>r.json()),
         fetch(`${API}/players/${id}/wl`).then(r=>r.json()),
       ]);
-      if(!profile?.profile) throw new Error('Игрок не найден');
+      if(!profile?.profile) throw new Error(t('not_found'));
       const p = profile.profile;
       const wr = (wl.win+wl.lose) ? (wl.win/(wl.win+wl.lose)*100) : 0;
       const data = { id, profile, wl, wr, rankTier: profile.rank_tier };
       const rImg = rankImg(profile.rank_tier);
       if(card) card.innerHTML = `
         <img src="${p.avatarfull||''}" alt="" onerror="this.style.display='none'"/>
-        <h3>${esc(p.personaname||'Аноним')}</h3>
-        <div class="meta">ID ${p.account_id} ${p.loccountrycode?'· '+esc(p.loccountrycode):''}</div>
-        ${profile.rank_tier ? `
-          <div class="meta" style="margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px">
-            ${rImg ? `<img src="${rImg}" alt="" style="width:36px;height:36px;border:none;border-radius:0" onerror="this.style.display='none'"/>` : ''}
-            <span>${esc(rankName(profile.rank_tier))}</span>
-          </div>
-        ` : ''}
+        <h3>${esc(p.personaname||'—')}</h3>
+        <div class="meta">ID ${p.account_id}</div>
+        ${profile.rank_tier ? `<div class="meta" style="margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px">${rImg ? `<img src="${rImg}" style="width:36px;height:36px;border:none;border-radius:0" onerror="this.style.display='none'"/>` : ''}<span>${esc(rankName(profile.rank_tier))}</span></div>` : ''}
       `;
       return data;
     }catch(e){
@@ -983,15 +1409,15 @@ async function renderCompare(app, params){
     const body = $('#compareBody');
     if(!body) return;
     if(!A || !B){
-      body.innerHTML = '<div class="empty-state">Введите двух игроков, чтобы увидеть сравнение</div>';
+      body.innerHTML = `<div class="empty-state">${t('no_data')}</div>`;
       return;
     }
     const rows = [
-      ['Матчей',   A.wl.win+A.wl.lose, B.wl.win+B.wl.lose, 'higher'],
-      ['Побед',    A.wl.win,           B.wl.win,           'higher'],
-      ['Поражений',A.wl.lose,          B.wl.lose,          'lower'],
-      ['Winrate',  A.wr.toFixed(1)+'%',B.wr.toFixed(1)+'%', 'wr'],
-      ['Ранг',     rankName(A.rankTier),rankName(B.rankTier), 'rank'],
+      [t('matches'), A.wl.win+A.wl.lose, B.wl.win+B.wl.lose, 'higher'],
+      [t('wins'),    A.wl.win,           B.wl.win,           'higher'],
+      [t('losses'),  A.wl.lose,          B.wl.lose,          'lower'],
+      [t('winrate'), A.wr.toFixed(1)+'%',B.wr.toFixed(1)+'%', 'wr'],
+      [t('rank'),    rankName(A.rankTier),rankName(B.rankTier), 'rank'],
     ];
     const better = (a, b, mode) => {
       if(mode==='higher') return a>b ? 'l' : (b>a?'r':'');
@@ -1004,28 +1430,18 @@ async function renderCompare(app, params){
       <div class="compare-stats">
         ${rows.map(([lbl,a,b,mode]) => {
           const win = better(a,b,mode);
-          return `
-            <div class="compare-row">
-              <div class="l ${win==='l'?'better':''}">${esc(String(a))}</div>
-              <div class="lbl">${esc(lbl)}</div>
-              <div class="r ${win==='r'?'better':''}">${esc(String(b))}</div>
-            </div>
-          `;
+          return `<div class="compare-row">
+            <div class="l ${win==='l'?'better':''}">${esc(String(a))}</div>
+            <div class="lbl">${esc(lbl)}</div>
+            <div class="r ${win==='r'?'better':''}">${esc(String(b))}</div>
+          </div>`;
         }).join('')}
       </div>
     `;
   }
 
-  on($('#formA'), 'submit', async e => {
-    e.preventDefault();
-    A = await loadOne('A', $('#inputA')?.value || '');
-    renderComparison();
-  });
-  on($('#formB'), 'submit', async e => {
-    e.preventDefault();
-    B = await loadOne('B', $('#inputB')?.value || '');
-    renderComparison();
-  });
+  on($('#formA'), 'submit', async e => { e.preventDefault(); A = await loadOne('A', $('#inputA')?.value || ''); renderComparison(); });
+  on($('#formB'), 'submit', async e => { e.preventDefault(); B = await loadOne('B', $('#inputB')?.value || ''); renderComparison(); });
 
   if(presetA) A = await loadOne('A', presetA);
   if(presetB) B = await loadOne('B', presetB);
@@ -1033,20 +1449,17 @@ async function renderCompare(app, params){
 }
 
 // ================================================================
-// ДЕТАЛИ МАТЧА
+// МАТЧ
 // ================================================================
 async function renderMatch(app, params){
   const matchId = params?.[0];
-  if(!matchId){
-    app.innerHTML = '<div class="empty-state error">⚠ Не указан match_id</div>';
-    return;
-  }
+  if(!matchId){ app.innerHTML = `<div class="empty-state error">${t('not_found')}</div>`; return; }
 
-  app.innerHTML = '<div class="empty-state"><span class="dot loading"></span> Загружаем матч…</div>';
+  app.innerHTML = `<div class="empty-state"><span class="dot loading"></span> ${t('loading')}</div>`;
 
   try{
     const m = await fetch(`${API}/matches/${matchId}`).then(r=>r.json());
-    if(!m || !m.match_id) throw new Error('Матч не найден или ещё не распарсен');
+    if(!m || !m.match_id) throw new Error(t('not_found'));
 
     const radiantWin = m.radiant_win;
     const players = m.players || [];
@@ -1055,19 +1468,13 @@ async function renderMatch(app, params){
 
     const renderTeam = (team, side) => `
       <div class="team-block ${side}">
-        <h3>
-          <span>${side==='radiant'?'🌿 Radiant':'🔥 Dire'}</span>
-          <span class="score">${side==='radiant' ? (m.radiant_score||0) : (m.dire_score||0)}</span>
-        </h3>
+        <h3><span>${side==='radiant'?'🌿 Radiant':'🔥 Dire'}</span>
+        <span class="score">${side==='radiant' ? (m.radiant_score||0) : (m.dire_score||0)}</span></h3>
         ${team.map(p => `
           <div class="player-row">
             <img src="${heroImgUrl(p.hero_id)}" alt=""/>
-            <div class="pname">
-              ${esc(heroName(p.hero_id))}
-              <small>${esc(p.personaname || p.name || 'Игрок')}</small>
-            </div>
-            <div class="pstat">
-              <b>${p.kills||0}</b> / ${p.deaths||0} / ${p.assists||0}<br/>
+            <div class="pname">${esc(heroName(p.hero_id))}<small>${esc(p.personaname || p.name || '—')}</small></div>
+            <div class="pstat"><b>${p.kills||0}</b> / ${p.deaths||0} / ${p.assists||0}<br/>
               <span style="font-size:11px">GPM ${p.gold_per_min||0} · XPM ${p.xp_per_min||0} · LH ${p.last_hits||0}</span>
             </div>
           </div>
@@ -1076,21 +1483,18 @@ async function renderMatch(app, params){
     `;
 
     app.innerHTML = `
-      <a href="#/pro" style="font-size:13px">← Назад</a>
-      <h2 class="page-title" style="margin-top:12px">Матч #${m.match_id}</h2>
+      <a href="#/pro" style="font-size:13px">← ${t('nav_pro')}</a>
+      <h2 class="page-title" style="margin-top:12px">Match #${m.match_id}</h2>
       <div class="match-header">
         <div style="font-size:20px;font-weight:700">
           <span style="color:var(--ok)">Radiant ${m.radiant_score||0}</span>
           &nbsp;:&nbsp;
           <span style="color:var(--bad)">${m.dire_score||0} Dire</span>
         </div>
-        <div class="${radiantWin?'radiant-win':'dire-win'}">
-          ${radiantWin?'Победа Radiant':'Победа Dire'}
-        </div>
+        <div class="${radiantWin?'radiant-win':'dire-win'}">${radiantWin?'Победа Radiant':'Победа Dire'}</div>
         <div class="match-meta">
           <span>⏱ ${fmtDuration(m.duration||0)}</span>
           <span>📅 ${fmtDate(m.start_time||0)}</span>
-          <span>🎮 ${GAME_MODES[m.game_mode]||'Mode '+m.game_mode}</span>
           ${m.league_name ? `<span>🏆 ${esc(m.league_name)}</span>` : ''}
         </div>
       </div>
@@ -1098,8 +1502,8 @@ async function renderMatch(app, params){
         ${renderTeam(rad, 'radiant')}
         ${renderTeam(dire, 'dire')}
       </div>
-      <p style="text-align:center;color:var(--muted);font-size:13px">
-        <a href="https://www.opendota.com/matches/${m.match_id}" target="_blank" rel="noopener">Открыть на OpenDota ↗</a>
+      <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:20px">
+        <a href="https://www.opendota.com/matches/${m.match_id}" target="_blank" rel="noopener">OpenDota ↗</a>
       </p>
     `;
   }catch(e){
@@ -1111,66 +1515,25 @@ async function renderMatch(app, params){
 // ДРУГИЕ САЙТЫ
 // ================================================================
 const SITES = [
-  {
-    icon: '🎨',
-    title: 'Dota2PornFxWeb',
-    url: 'https://h6rd.github.io/Dota2PornFxWeb/',
-    desc: 'Скачать VPK-паки со скинами для Dota 2. Готовые наборы модов, подключаются через консоль игры.',
-    tags: ['Скины', 'VPK', 'Моды'],
-  },
-  {
-    icon: '😀',
-    title: 'Dota 2 Emoticons',
-    url: 'https://aluerie.github.io/Dota2Utils/ListEmoticons/',
-    desc: 'Список смайликов-эмодзи для Dota 2. Скопируй unicode-символ из колонки <code>chr</code> и вставь в консоль для бинда — например, <code>bind o "say_team "</code>.',
-    tags: ['Эмодзи', 'Бинды', 'Консоль'],
-  },
-  {
-    icon: '📊',
-    title: 'Dota 2 Pro Tracker',
-    url: 'https://dota2protracker.com/',
-    desc: 'Статистика про-игроков: пики, билды, винрейты, свежие матчи и тренды мета-патча.',
-    tags: ['Про', 'Мета', 'Сборки'],
-  },
-  {
-    icon: '👁',
-    title: 'OpenDota',
-    url: 'https://www.opendota.com/',
-    desc: 'Открытая статистика Dota 2. Разбор матчей, API, исторические данные, рейтинги.',
-    tags: ['API', 'Статистика'],
-  },
-  {
-    icon: '🐃',
-    title: 'Dotabuff',
-    url: 'https://www.dotabuff.com/',
-    desc: 'Популярная статистика игроков и героев. Матчи, билды, мета, рейтинги. Может блокировать прямые запросы (403) — открывай в обычном браузере.',
-    tags: ['Профили', 'Мета'],
-  },
-  {
-    icon: '🚀',
-    title: 'STRATZ',
-    url: 'https://stratz.com/',
-    desc: 'Современная аналитика Dota 2: детальные графики, роли, визуализация матчей.',
-    tags: ['Аналитика', 'Графики'],
-  },
+  { icon:'🎨', title:'Dota2PornFxWeb', url:'https://h6rd.github.io/Dota2PornFxWeb/', desc:'Скачать VPK-паки со скинами для Dota 2.', tags:['Скины','VPK','Моды'] },
+  { icon:'😀', title:'Dota 2 Emoticons', url:'https://aluerie.github.io/Dota2Utils/ListEmoticons/', desc:'Список эмодзи для Dota 2 — бинды через консоль.', tags:['Эмодзи','Бинды'] },
+  { icon:'📊', title:'Dota 2 Pro Tracker', url:'https://dota2protracker.com/', desc:'Статистика про-игроков: пики, билды, винрейты.', tags:['Про','Мета'] },
+  { icon:'👁', title:'OpenDota', url:'https://www.opendota.com/', desc:'Открытая статистика Dota 2 + API.', tags:['API','Стата'] },
+  { icon:'🐃', title:'Dotabuff', url:'https://www.dotabuff.com/', desc:'Популярная статистика игроков и героев.', tags:['Профили','Мета'] },
+  { icon:'🚀', title:'STRATZ', url:'https://stratz.com/', desc:'Современная аналитика Dota 2.', tags:['Аналитика'] },
 ];
 
 async function renderSites(app){
   app.innerHTML = `
-    <h2 class="page-title">🔗 Другие сайты</h2>
-    <p class="page-sub">Полезные ресурсы по Dota 2 — статистика, скины, эмодзи, аналитика</p>
+    <h2 class="page-title">🔗 ${t('nav_sites')}</h2>
+    <p class="page-sub">Полезные ресурсы по Dota 2</p>
     <div class="sites-grid">
       ${SITES.map(s => `
         <a class="site-card" href="${s.url}" target="_blank" rel="noopener">
           <div class="site-icon">${s.icon}</div>
-          <div class="site-title">
-            ${esc(s.title)}
-            <span class="ext">↗</span>
-          </div>
+          <div class="site-title">${esc(s.title)}<span class="ext">↗</span></div>
           <div class="site-desc">${s.desc}</div>
-          <div class="site-tags">
-            ${s.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
-          </div>
+          <div class="site-tags">${s.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
         </a>
       `).join('')}
     </div>
@@ -1182,6 +1545,7 @@ async function renderSites(app){
 // ================================================================
 function boot(){
   initTheme();
+  initLang();
   loadHeroMap().catch(()=>{});
 
   window.addEventListener('hashchange', () => navigate());

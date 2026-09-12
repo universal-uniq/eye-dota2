@@ -57,21 +57,22 @@ button{font-family:inherit}
   backdrop-filter:blur(10px);
   position:sticky;top:0;z-index:10;gap:16px;flex-wrap:wrap;
 }
-.brand{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none}
+.brand{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;flex-shrink:0}
 .brand .eye{font-size:24px}
 .brand h1{font-size:20px;font-weight:700;letter-spacing:.5px}
 .brand h1 span{color:var(--accent)}
-.topbar nav{display:flex;gap:4px;flex-wrap:wrap}
+.topbar nav{display:flex;gap:4px;flex-wrap:wrap;flex:1;justify-content:center}
 .topbar nav a{
-  padding:8px 14px;border-radius:8px;color:var(--muted);
-  font-weight:500;font-size:14px;transition:all .15s;text-decoration:none;
+  padding:8px 12px;border-radius:8px;color:var(--muted);
+  font-weight:500;font-size:13.5px;transition:all .15s;text-decoration:none;
+  white-space:nowrap;
 }
 .topbar nav a:hover{color:var(--text);background:var(--bg2);text-decoration:none}
 .topbar nav a.active{color:var(--accent);background:var(--bg-hover)}
 .theme-toggle{
   background:var(--bg2);border:1px solid var(--line);color:var(--text);
-  width:40px;height:40px;border-radius:10px;cursor:pointer;font-size:18px;
-  transition:all .15s;
+  width:40px;height:40px;border-radius:10px;cursor:pointer;font-size:16px;
+  transition:all .15s;font-weight:600;
 }
 .theme-toggle:hover{border-color:var(--accent);transform:scale(1.05)}
 
@@ -79,6 +80,7 @@ button{font-family:inherit}
 main{max-width:1240px;margin:0 auto;padding:32px 24px 80px}
 h2{font-size:22px;margin-bottom:8px}
 h3{font-size:16px;margin-bottom:14px}
+h4{font-size:13px;margin-bottom:8px}
 section{margin-bottom:48px}
 .page-title{
   font-size:32px;margin-bottom:8px;
@@ -145,7 +147,7 @@ section{margin-bottom:48px}
 .hero-card .wr{display:block;font-size:11px;color:var(--ok);padding-bottom:8px}
 .hero-card .wr.bad{color:var(--bad)}
 
-/* ==== ITEM CARD (сборки) — компактнее ==== */
+/* ==== ITEM CARD (сборки) — компактные ==== */
 .item-grid{
   display:grid;
   grid-template-columns:repeat(auto-fill,minmax(96px,1fr));
@@ -186,10 +188,11 @@ section{margin-bottom:48px}
   background:var(--bg2);border:1px solid var(--line);border-radius:12px;
   padding:16px;text-align:center;min-width:150px;
 }
-.stat span,.stat-card .val{font-size:26px;font-weight:700;color:var(--accent);display:block}
-.stat small,.stat-card .lbl{color:var(--muted);font-size:12px;margin-top:4px;display:block}
+.stat span,.stat-card .val{font-size:24px;font-weight:700;color:var(--accent);display:block;line-height:1.2}
+.stat small,.stat-card .lbl{color:var(--muted);font-size:12px;margin-top:6px;display:block}
 .stat-card .val.green{color:var(--ok)}
 .stat-card .val.red{color:var(--bad)}
+.stat-card .val.accent{color:var(--accent)}
 
 /* ==== SEARCH FORM ==== */
 .search-form{display:flex;gap:10px;margin:18px 0 12px;max-width:640px}
@@ -222,7 +225,7 @@ section{margin-bottom:48px}
 }
 .empty-state.error{color:var(--bad);border-color:var(--bad)}
 
-/* ==== PROFILE ==== */
+/* ==== PROFILE / HERO HEADER ==== */
 .profile-header{
   display:flex;gap:24px;align-items:center;
   padding:24px;background:var(--bg2);border:1px solid var(--line);
@@ -234,7 +237,8 @@ section{margin-bottom:48px}
 }
 .profile-header .info{flex:1;min-width:200px}
 .profile-header .info h3{font-size:22px;margin-bottom:6px}
-.profile-header .info .meta{color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap}
+.profile-header .info .meta{color:var(--muted);font-size:13px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.profile-header .info .meta a{color:var(--accent)}
 
 .rank-badge{
   display:flex;align-items:center;gap:12px;padding:12px 18px;
@@ -274,6 +278,8 @@ table.data-table th{
 table.data-table tr:last-child td{border-bottom:none}
 table.data-table tbody tr:hover td{background:var(--bg-hover)}
 table.data-table img{width:44px;height:auto;border-radius:4px;vertical-align:middle;margin-right:10px}
+table.data-table a{display:flex;align-items:center;gap:8px;color:var(--text)}
+table.data-table a:hover{text-decoration:none;color:var(--accent)}
 .wr-cell{font-weight:600}
 .wr-cell.good{color:var(--ok)}
 .wr-cell.bad{color:var(--bad)}
@@ -418,9 +424,41 @@ table.data-table img{width:44px;height:auto;border-radius:4px;vertical-align:mid
   background:var(--bg3);color:var(--muted);
 }
 
+/* ==== PATCH ==== */
+.patch-banner{
+  display:flex;gap:24px;align-items:center;
+  padding:24px;background:linear-gradient(135deg, var(--bg2), var(--bg3));
+  border:1px solid var(--line);border-radius:14px;margin-bottom:24px;
+  flex-wrap:wrap;
+}
+.patch-banner .patch-emoji{font-size:64px;line-height:1}
+.patch-banner .patch-info{flex:1;min-width:220px}
+.patch-banner h3{font-size:20px;margin-bottom:6px}
+.patch-banner h3 span{color:var(--accent)}
+.patch-banner .patch-meta{
+  color:var(--muted);font-size:13px;display:flex;
+  gap:16px;flex-wrap:wrap;margin-top:6px;
+}
+
+/* ==== STATS (глобальная) ==== */
+.stats-cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+@media(max-width:800px){.stats-cols{grid-template-columns:1fr}}
+
 /* ==== FOOTER ==== */
 footer{
   border-top:1px solid var(--line);padding:24px;text-align:center;
   color:var(--muted);font-size:13px;
 }
 footer .small{font-size:11px;margin-top:6px;opacity:.6}
+
+/* ==== АДАПТИВ ==== */
+@media(max-width:800px){
+  .topbar{padding:10px 16px}
+  .topbar nav a{padding:6px 10px;font-size:12px}
+  .brand h1{font-size:18px}
+  main{padding:20px 16px 60px}
+  .page-title{font-size:24px}
+  .profile-header{padding:16px;gap:16px}
+  .profile-header img.avatar{width:72px;height:72px}
+  .stat-card .val{font-size:20px}
+}
