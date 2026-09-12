@@ -14,8 +14,18 @@ const GAME_MODES = {
   5:'All Random',16:'Captains Draft',18:'Ability Draft',22:'All Pick (Ranked)',23:'Turbo'
 };
 
-// 🔧 URL твоего Cloudflare Worker (обход CORS для Steam API)
+// ================================================================
+// ГИБРИДНЫЙ ПРОКСИ ДЛЯ STEAM API
+// ================================================================
+// Свой Worker — основной источник (быстрый, надёжный).
+// Если упадёт — автоматически переключимся на публичные прокси.
 const WORKER_BASE = 'https://eye-dota2-proxy.human001user.workers.dev';
+
+// Публичные CORS-прокси (fallback, если Worker недоступен)
+const PUBLIC_PROXIES = [
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+];
 
 const cache = {
   heroMap: {}, heroSlug: {}, heroImg: {}, heroStats: null, items: null,
@@ -163,6 +173,7 @@ const routes = {
   player:  renderPlayer,
   compare: renderCompare,
   match:   renderMatch,
+  sites:   renderSites,
 };
 function parseHash(){
   const h = location.hash.replace(/^#\/?/, '') || 'servers';
@@ -194,35 +205,57 @@ async function navigate(){
 }
 
 // ================================================================
-// СЕРВЕРЫ — Live через GetCMListForConnect
+// СЕРВЕРЫ — гибрид Worker → публичные прокси → fallback
 // ================================================================
-// cellid — идентификатор региона в инфраструктуре Steam:
-//   1 = US East (Atlanta, Sterling)
-//   2 = US West (Seattle, LA)
-//   3 = EU (Frankfurt, Amsterdam, London, ...)
-//   5 = Asia (Seoul, Tokyo, Singapore)
-//   0 = Steam сам определит по IP
 const REGIONS = [
   { name: '🇪🇺 Европа',  cellid: 3 },
   { name: '🌎 Америка', cellid: 1 },
   { name: '🌏 Азия',    cellid: 5 },
 ];
 
+// CM-адреса приходят либо строками, либо объектами — нормализуем
+function extractEndpoint(entry){
+  if(typeof entry === 'string') return entry;
+  if(entry && typeof entry === 'object'){
+    return entry.endpoint || entry.legacy_endpoint || entry.hostname || '';
+  }
+  return '';
+}
+
+// Пробуем сначала Worker, потом публичные прокси
+async function fetchSteam(path){
+  const steamUrl = `https://api.steampowered.com${path}`;
+  const errors = [];
+
+  if(WORKER_BASE){
+    try{
+      const r = await fetch(`${WORKER_BASE}${path}`);
+      if(r.ok) return await r.json();
+      errors.push(`Worker HTTP ${r.status}`);
+    }catch(e){ errors.push(`Worker ${e.message}`); }
+  }
+
+  for(const build of PUBLIC_PROXIES){
+    try{
+      const r = await fetch(build(steamUrl), { headers: { 'Accept': 'application/json' } });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const text = await r.text();
+      return JSON.parse(text);
+    }catch(e){ errors.push(`Proxy ${e.message}`); }
+  }
+
+  throw new Error(errors.join(' | '));
+}
+
 async function checkRegion(cellid){
   const path = `/ISteamDirectory/GetCMListForConnect/v1/?cellid=${cellid}&format=json`;
-  const url = `${WORKER_BASE}${path}`;
   const t0 = performance.now();
   try{
-    const r = await fetch(url);
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    const d = await r.json();
+    const d = await fetchSteam(path);
     const ping = Math.round(performance.now() - t0);
-
-    // API возвращает { response: { serverlist: ["host1:port", "host2:port", ...] } }
-    const servers = d?.response?.serverlist || [];
-    const alive = servers.filter(addr => addr && addr.includes(':')).length;
-
-    return { ok: alive > 0, total: servers.length, alive, servers, ping };
+    const raw = d?.response?.serverlist || [];
+    const servers = raw.map(extractEndpoint).filter(s => s && typeof s === 'string' && s.length > 0);
+    return { ok: servers.length > 0, total: raw.length, alive: servers.length, servers, ping };
   }catch(e){
     return { ok: false, error: true, message: e.message, servers: [] };
   }
@@ -255,6 +288,7 @@ async function renderServers(app){
   const refresh = async () => {
     let totalAlive = 0;
     let totalServers = 0;
+    let failedRegions = 0;
 
     for(const region of REGIONS){
       const res = await checkRegion(region.cellid);
@@ -263,7 +297,8 @@ async function renderServers(app){
       const statusEl = regionEl?.querySelector('.region-status');
 
       if(res.error){
-        if(statusEl) statusEl.innerHTML = `<span class="dot bad"></span> Ошибка сети: ${esc(res.message)}`;
+        failedRegions++;
+        if(statusEl) statusEl.innerHTML = `<span class="dot bad"></span> Не удалось получить данные`;
         if(listEl) listEl.innerHTML = '';
         continue;
       }
@@ -272,21 +307,15 @@ async function renderServers(app){
       totalServers += res.total;
 
       if(statusEl){
-        if(res.alive > 0){
-          statusEl.innerHTML = `<span class="dot ok"></span> <b>${res.alive}</b> серверов онлайн · ${res.ping} мс`;
-        } else {
-          statusEl.innerHTML = `<span class="dot warn"></span> Нет данных`;
-        }
+        statusEl.innerHTML = res.alive > 0
+          ? `<span class="dot ok"></span> <b>${res.alive}</b> серверов онлайн · ${res.ping} мс`
+          : `<span class="dot warn"></span> Нет данных`;
       }
 
       if(listEl){
         const list = res.servers.slice(0, 8);
         listEl.innerHTML = list.length
-          ? list.map(addr => `
-              <li>
-                <span class="name">${esc(addr)}</span>
-              </li>
-            `).join('')
+          ? list.map(addr => `<li><span class="name">${esc(addr)}</span></li>`).join('')
           : '<li><span class="name" style="opacity:.6">— нет адресов —</span></li>';
         if(res.servers.length > list.length){
           listEl.innerHTML += `<li style="text-align:center;color:var(--muted);font-size:11px">…и ещё ${res.servers.length - list.length}</li>`;
@@ -297,8 +326,14 @@ async function renderServers(app){
     const sm = $('#summary');
     if(!sm) return;
 
-    if(totalServers === 0){
-      sm.innerHTML = `<span class="dot bad"></span> Не удалось получить список серверов. Проверьте Worker.`;
+    if(totalServers === 0 && failedRegions === REGIONS.length){
+      sm.innerHTML = `
+        <span class="dot bad"></span>
+        Не удалось получить данные. Проверьте статус на
+        <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us</a>
+      `;
+    } else if(totalServers === 0){
+      sm.innerHTML = `<span class="dot warn"></span> Получен пустой список серверов.`;
     } else {
       sm.innerHTML = `<span class="dot ok"></span> Получено <b>${totalServers}</b> серверов · активных: <b>${totalAlive}</b>`;
     }
@@ -1013,6 +1048,76 @@ async function renderMatch(app, params){
   }catch(e){
     app.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
   }
+}
+
+// ================================================================
+// ДРУГИЕ САЙТЫ
+// ================================================================
+const SITES = [
+  {
+    icon: '🎨',
+    title: 'Dota2PornFxWeb',
+    url: 'https://h6rd.github.io/Dota2PornFxWeb/',
+    desc: 'Скачать VPK-паки со скинами для Dota 2. Готовые наборы модов, подключаются через консоль игры.',
+    tags: ['Скины', 'VPK', 'Моды'],
+  },
+  {
+    icon: '😀',
+    title: 'Dota 2 Emoticons',
+    url: 'https://aluerie.github.io/Dota2Utils/ListEmoticons/',
+    desc: 'Список смайликов-эмодзи для Dota 2. Скопируй unicode-символ из колонки <code>chr</code> и вставь в консоль для бинда — например, <code>bind o "say_team "</code>.',
+    tags: ['Эмодзи', 'Бинды', 'Консоль'],
+  },
+  {
+    icon: '📊',
+    title: 'Dota 2 Pro Tracker',
+    url: 'https://dota2protracker.com/',
+    desc: 'Статистика про-игроков: пики, билды, винрейты, свежие матчи и тренды мета-патча.',
+    tags: ['Про', 'Мета', 'Сборки'],
+  },
+  {
+    icon: '👁',
+    title: 'OpenDota',
+    url: 'https://www.opendota.com/',
+    desc: 'Открытая статистика Dota 2. Разбор матчей, API, исторические данные, рейтинги.',
+    tags: ['API', 'Статистика'],
+  },
+  {
+    icon: '🐃',
+    title: 'Dotabuff',
+    url: 'https://www.dotabuff.com/',
+    desc: 'Популярная статистика игроков и героев. Матчи, билды, мета, рейтинги. Может блокировать прямые запросы (403) — открывай в обычном браузере.',
+    tags: ['Профили', 'Мета'],
+  },
+  {
+    icon: '🚀',
+    title: 'STRATZ',
+    url: 'https://stratz.com/',
+    desc: 'Современная аналитика Dota 2: детальные графики, роли, визуализация матчей.',
+    tags: ['Аналитика', 'Графики'],
+  },
+];
+
+async function renderSites(app){
+  app.innerHTML = `
+    <h2 class="page-title">🔗 Другие сайты</h2>
+    <p class="page-sub">Полезные ресурсы по Dota 2 — статистика, скины, эмодзи, аналитика</p>
+    <div class="sites-grid">
+      ${SITES.map(s => `
+        <a class="site-card" href="${s.url}" target="_blank" rel="noopener">
+          <div class="site-icon">${s.icon}</div>
+          <div class="site-title">
+            ${esc(s.title)}
+            <span class="ext">↗</span>
+          </div>
+          <div class="site-desc">${s.desc}</div>
+          <div class="site-tags">
+            ${s.tags.map(t => `<span class="tag">${esc(t)}</span>`).join('')}
+          </div>
+        </a>
+      `).join('')}
+    </div>
+  `;
 }
 
 // ================================================================
