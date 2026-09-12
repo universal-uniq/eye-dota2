@@ -462,3 +462,88 @@ footer .small{font-size:11px;margin-top:6px;opacity:.6}
   .profile-header img.avatar{width:72px;height:72px}
   .stat-card .val{font-size:20px}
 }
+/* ============================================================
+   MODAL (Настройки)
+   ============================================================ */
+.modal{
+  position:fixed;inset:0;z-index:100;
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;
+}
+.modal.hidden{display:none}
+.modal-backdrop{
+  position:absolute;inset:0;background:rgba(0,0,0,.6);
+  backdrop-filter:blur(4px);
+}
+.modal-body{
+  position:relative;background:var(--bg2);border:1px solid var(--line);
+  border-radius:16px;padding:24px;max-width:520px;width:100%;
+  max-height:90vh;overflow-y:auto;box-shadow:var(--shadow);
+  animation:modalIn .15s ease-out;
+}
+@keyframes modalIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+.modal-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--line);
+}
+.modal-header h2{font-size:20px;margin:0}
+.modal-close{
+  background:var(--bg3);border:1px solid var(--line);color:var(--text);
+  width:36px;height:36px;border-radius:8px;cursor:pointer;font-size:16px;
+  transition:all .15s;
+}
+.modal-close:hover{border-color:var(--accent);color:var(--accent)}
+
+.settings-block{margin-bottom:20px}
+.settings-block h3{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.settings-row{display:flex;gap:8px;flex-wrap:wrap}
+.settings-btn{
+  padding:10px 16px;border-radius:10px;border:1px solid var(--line);
+  background:var(--bg3);color:var(--text);cursor:pointer;
+  font-size:13px;font-weight:500;transition:all .15s;
+}
+.settings-btn:hover{border-color:var(--accent)}
+.settings-btn.active{
+  border-color:var(--accent);
+  background:var(--bg-hover);
+  color:var(--accent);
+  font-weight:600;
+}
+.color-btn{width:44px;height:44px;padding:0;font-size:18px;display:flex;align-items:center;justify-content:center}
+
+/* ============================================================
+   ИДЕАЛЬНЫЙ ПИК
+   ============================================================ */
+.pick-hero{position:relative;cursor:pointer}
+.pick-hero.picked{
+  outline:3px solid var(--accent);
+  transform:scale(1.03);
+}
+.pick-hero.picked::after{
+  content:'✓';position:absolute;top:4px;right:4px;
+  background:var(--accent);color:#fff;width:22px;height:22px;
+  border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;
+}
+
+/* ============================================================
+   РАЗМЕР ШРИФТА
+   ============================================================ */
+:root[data-fontsize="sm"] body{font-size:13px}
+:root[data-fontsize="md"] body{font-size:15px}
+:root[data-fontsize="lg"] body{font-size:17px}
+
+/* ============================================================
+   КОМПАКТНЫЙ РЕЖИМ
+   ============================================================ */
+:root[data-compact="on"] main{padding:16px 12px 40px}
+:root[data-compact="on"] .region,
+:root[data-compact="on"] .stat-card,
+:root[data-compact="on"] .stat{padding:10px}
+:root[data-compact="on"] .match-row{padding:8px 12px}
+:root[data-compact="on"] .topbar{padding:8px 16px}
+:root[data-compact="on"] .topbar nav a{padding:6px 10px;font-size:12px}
+:root[data-compact="on"] .page-title{font-size:24px}
+:root[data-compact="on"] h2{font-size:18px}
+:root[data-compact="on"] .profile-header{padding:14px;gap:14px}
+:root[data-compact="on"] .stat-grid{gap:8px}
