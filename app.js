@@ -61,21 +61,26 @@ function heroImgUrl(id){
   return slug ? `${HERO_CDN}/${slug}.png` : '';
 }
 
-// 🎒 Иконка предмета — берём URL напрямую из OpenDota (поле item.img)
-// Если img отсутствует — собираем fallback из slug.
-function itemImgUrlFromData(item){
-  if(!item) return '';
-  const path = item.img || '';
-  if(!path) return '';
-  // OpenDota отдаёт путь вида "/apps/dota2/images/dota_react/items/blink.png"
-  return path.startsWith('http') ? path : `${CDN}${path}`;
-}
-// Fallback: пробуем старый _lg путь
-function itemImgUrlFallbackFromKey(key){
-  if(!key) return '';
-  const slug = String(key).toLowerCase().replace(/[^a-z0-9_]/g, '');
-  if(!slug) return '';
-  return `${CDN}/apps/dota2/images/items/${slug}_lg.png`;
+// 🎒 Возвращает список возможных URL картинки предмета (пробуем по порядку)
+function itemImgCandidates(item, key){
+  const urls = [];
+  const slug = (key || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
+
+  // 1) Основной — готовый путь из OpenDota (item.img)
+  if(item && item.img){
+    const path = item.img;
+    const full = path.startsWith('http') ? path : `${CDN}${path}`;
+    urls.push(full);
+  }
+
+  // 2) Старый надёжный _lg путь Valve
+  if(slug) urls.push(`${CDN}/apps/dota2/images/items/${slug}_lg.png`);
+
+  // 3) Новый dota_react путь
+  if(slug) urls.push(`${CDN}/apps/dota2/images/dota_react/items/${slug}.png`);
+
+  // Дедуп
+  return [...new Set(urls)].filter(Boolean);
 }
 
 function esc(s){
@@ -83,6 +88,47 @@ function esc(s){
 }
 function on(el, evt, fn){
   if(el && typeof el.addEventListener === 'function') el.addEventListener(evt, fn);
+}
+
+// ================================================================
+// ПЕРЕБОР ИСТОЧНИКОВ КАРТИНОК ПРЕДМЕТОВ
+// ================================================================
+// Если первый URL 404 — onerror вызывает эту функцию и пробует следующий.
+window.__tryNextImg = function(img){
+  const raw = img.getAttribute('data-srcs');
+  if(!raw){ img.style.opacity = '0'; return; }
+  let list;
+  try { list = JSON.parse(raw); } catch { list = []; }
+
+  const current = img.src;
+  // Сравниваем по хвосту URL — браузер может нормализовать адрес
+  const idx = list.findIndex(u => u === current || current.endsWith(u.split('/').pop()));
+  const nextIdx = idx >= 0 ? idx + 1 : 0;
+
+  if(nextIdx < list.length){
+    img.src = list[nextIdx];
+  } else {
+    // Все варианты исчерпаны — показываем заглушку
+    img.style.display = 'none';
+    const ph = img.parentElement?.querySelector('.ph');
+    if(ph) ph.hidden = false;
+  }
+};
+
+// Устанавливаем первый рабочий src для всех картинок в .item-card
+function initItemImages(){
+  document.querySelectorAll('.item-card img[data-srcs]').forEach(img => {
+    if(img.src) return;
+    let list;
+    try { list = JSON.parse(img.getAttribute('data-srcs')); } catch { list = []; }
+    if(list.length){
+      img.src = list[0];
+    } else {
+      img.style.display = 'none';
+      const ph = img.parentElement?.querySelector('.ph');
+      if(ph) ph.hidden = false;
+    }
+  });
 }
 
 // ================================================================
@@ -216,7 +262,7 @@ async function navigate(){
 }
 
 // ================================================================
-// СЕРВЕРЫ — гибрид Worker → публичные прокси
+// СЕРВЕРЫ
 // ================================================================
 const REGIONS = [
   { name: '🇪🇺 Европа',  cellid: 3 },
@@ -442,7 +488,7 @@ async function renderMeta(app){
 }
 
 // ================================================================
-// СБОРКИ — используем item.img напрямую из OpenDota
+// СБОРКИ — иконки через перебор источников
 // ================================================================
 async function renderBuilds(app){
   app.innerHTML = `
@@ -485,21 +531,17 @@ async function renderBuilds(app){
         const entries = Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0, 12);
         return `
           <h3 style="margin-top:24px">${title}</h3>
-          <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
+          <div class="item-grid">
             ${entries.map(([key, count]) => {
               const itemData = items[key] || {};
-              // 🎯 ГЛАВНОЕ: URL берём из OpenDota (item.img), а не собираем вручную.
-              const url = itemImgUrlFromData(itemData);
-              const fallback = itemImgUrlFallbackFromKey(key);
+              const urls = itemImgCandidates(itemData, key);
               const display = itemData.dname || key;
               return `
-                <div class="item-card">
+                <div class="item-card" title="${esc(display)}">
                   <div class="img-wrap">
-                    ${url
-                      ? `<img src="${url}" alt="${esc(display)}" loading="lazy"
-                             onerror="if(this.dataset.fbk){this.style.opacity='0';}else{this.dataset.fbk='1';this.src='${fallback}';}"/>`
-                      : `<img src="${fallback}" alt="${esc(display)}" loading="lazy"
-                             onerror="this.style.opacity='0'"/>`}
+                    <img data-srcs='${JSON.stringify(urls)}' alt="${esc(display)}"
+                         onerror="window.__tryNextImg && window.__tryNextImg(this)"/>
+                    <span class="ph" hidden>❔</span>
                   </div>
                   <div class="item-name">${esc(display)}</div>
                   <span class="item-count">× ${count.toLocaleString('ru-RU')}</span>
@@ -516,6 +558,9 @@ async function renderBuilds(app){
         ${renderSection('🛡️ Мид-гейм (10–25 мин, ≥2000 золота)', pop.mid_game_items)}
         ${renderSection('👑 Лейт-гейм (25+ мин, ≥4000 золота)', pop.late_game_items)}
       `;
+
+      // применяем первый рабочий URL для всех картинок
+      setTimeout(initItemImages, 0);
     }catch(e){
       body.innerHTML = `<div class="empty-state error">⚠ ${esc(e.message)}</div>`;
     }
