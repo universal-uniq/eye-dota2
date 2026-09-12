@@ -5,7 +5,8 @@
 const API = 'https://api.opendota.com/api';
 const CDN = 'https://cdn.cloudflare.steamstatic.com';
 const HERO_CDN = `${CDN}/apps/dota2/images/dota_react/heroes`;
-const RANK_CDN = 'https://raw.githubusercontent.com/odota/dotaconstants/master/build/ranks';
+const ITEM_CDN = `${CDN}/apps/dota2/images/dota_react/items`;
+const RANK_CDN = 'https://www.opendota.com/assets/images/dota2/rank_icons';
 
 const RANKS = {1:'Herald',2:'Guardian',3:'Crusader',4:'Archon',5:'Legend',6:'Ancient',7:'Divine',8:'Immortal'};
 const GAME_MODES = {
@@ -13,7 +14,7 @@ const GAME_MODES = {
   5:'All Random',16:'Captains Draft',18:'Ability Draft',22:'All Pick (Ranked)',23:'Turbo'
 };
 
-// 🔧 URL твоего Cloudflare Worker для обхода CORS
+// 🔧 URL твоего Cloudflare Worker (обход CORS для Steam API)
 const WORKER_BASE = 'https://eye-dota2-proxy.human001user.workers.dev';
 
 const cache = {
@@ -41,35 +42,36 @@ function rankName(tier){
   const star = tier%10, name = RANKS[Math.floor(tier/10)];
   return name ? `${name} ${star}` : 'Без ранга';
 }
+
+// 🏅 Иконки рангов — OpenDota CDN (проверенный рабочий источник)
 function rankImg(tier){
   if(!tier) return '';
-  const medal = Math.floor(tier/10);
+  const medal = Math.floor(tier/10);  // 1..8
   if(medal < 1 || medal > 8) return '';
-  return `${RANK_CDN}/${medal}.png`;
+  return `${RANK_CDN}/rank_icon_${medal}.png`;
 }
+
 function heroName(id){ return cache.heroMap[id] || 'Hero #'+id; }
 function heroImgUrl(id){
   if(cache.heroImg[id]) return cache.heroImg[id];
   const slug = cache.heroSlug[id];
   return slug ? `${HERO_CDN}/${slug}.png` : '';
 }
+
+// 🎒 Иконки предметов — CDN Valve, dota_react/items/<key>.png
+// key — это внутренний slug из OpenDota: blink, power_treads, ward_observer, ...
+function itemImgUrl(key){
+  if(!key) return '';
+  const slug = String(key).toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if(!slug) return '';
+  return `${ITEM_CDN}/${slug}.png`;
+}
+
 function esc(s){
   return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function on(el, evt, fn){
   if(el && typeof el.addEventListener === 'function') el.addEventListener(evt, fn);
-}
-function itemImgUrl(item){
-  if(!item) return '';
-  let path = item.img || '';
-  if(path && !path.startsWith('/')) path = '/' + path;
-  if(path) return CDN + path;
-  const slug = (item.dname || '')
-    .toLowerCase()
-    .replace(/'/g, '')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '');
-  return slug ? `${CDN}/apps/dota2/images/dota_react/items/${slug}.png` : '';
 }
 
 // ================================================================
@@ -462,7 +464,7 @@ async function renderBuilds(app){
           <div class="hero-grid" style="grid-template-columns:repeat(auto-fill,minmax(140px,1fr))">
             ${entries.map(([key, count]) => {
               const item = items[key] || { dname: key };
-              const url = itemImgUrl(item);
+              const url = itemImgUrl(key);
               const display = item.dname || key;
               return `
                 <div class="hero-card" style="cursor:default">
@@ -470,7 +472,7 @@ async function renderBuilds(app){
                     ${url
                       ? `<img src="${url}" alt="${esc(display)}" loading="lazy"
                              style="width:100%;height:100%;object-fit:contain"
-                             onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'❔',style:'font-size:32px;color:var(--muted)'}))"/>`
+                             onerror="this.style.opacity='0'"/>`
                       : `<span style="font-size:32px;color:var(--muted)">❔</span>`}
                   </div>
                   <div class="name" style="padding:8px 6px 2px;font-size:12px;font-weight:500;line-height:1.2;min-height:32px">${esc(display)}</div>
@@ -703,8 +705,7 @@ function renderPlayerContent(cont, profile, wl, heroes, matches, totals){
       </div>
       ${rImg ? `
         <div class="rank-badge">
-          <img src="${rImg}" alt="${esc(rankName(rankTier))}"
-               onerror="this.replaceWith(Object.assign(document.createElement('div'),{textContent:'🏅',style:'font-size:42px'}))"/>
+          <img src="${rImg}" alt="${esc(rankName(rankTier))}" onerror="this.style.display='none'"/>
           <div class="rank-txt"><b>${esc(rankName(rankTier))}</b>rank tier ${rankTier}</div>
         </div>
       ` : ''}
