@@ -4,16 +4,13 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Eye Dota 2 — мета, сборки, статистика</title>
-
 <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
-
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Eye Dota 2" />
 <meta property="og:description" content="Статус серверов, мета, сборки, статистика и профили игроков Dota 2" />
 <meta property="og:url" content="https://universal-uniq.github.io/eye-dota2/" />
 <meta name="twitter:card" content="summary_large_image" />
-
 <link rel="preconnect" href="https://api.opendota.com" />
 <link rel="preconnect" href="https://cdn.cloudflare.steamstatic.com" />
 <link rel="stylesheet" href="style.css" />
@@ -41,7 +38,7 @@
     <a href="#/sites"    data-route="sites"    data-i18n="nav_sites">🔗 Сайты</a>
   </nav>
   <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
-    <button id="langToggle" class="theme-toggle" title="RU / EN" aria-label="Сменить язык" style="width:auto;padding:0 12px;font-weight:700">RU</button>
+    <button id="langToggle" class="theme-toggle" title="RU / EN" style="width:auto;padding:0 12px;font-weight:700">RU</button>
     <button id="themeToggle" class="theme-toggle" title="Сменить тему">🌙</button>
     <button id="settingsBtn" class="theme-toggle" title="Настройки">⚙️</button>
   </div>
@@ -54,7 +51,6 @@
       <h2>⚙️ <span data-i18n="settings_title">Настройки</span></h2>
       <button id="settingsClose" class="modal-close">✕</button>
     </div>
-
     <div class="settings-block">
       <h3 data-i18n="settings_theme">Тема</h3>
       <div class="settings-row" id="themeRow">
@@ -63,18 +59,16 @@
         <button class="settings-btn" data-theme-val="auto" data-i18n="settings_auto">🖥 Авто</button>
       </div>
     </div>
-
     <div class="settings-block">
       <h3 data-i18n="settings_accent">Акцентный цвет</h3>
       <div class="settings-row" id="accentRow">
-        <button class="settings-btn color-btn" data-accent-val="orange" title="Оранжевый">🟠</button>
-        <button class="settings-btn color-btn" data-accent-val="red"    title="Красный">🔴</button>
-        <button class="settings-btn color-btn" data-accent-val="blue"   title="Синий">🔵</button>
-        <button class="settings-btn color-btn" data-accent-val="green"  title="Зелёный">🟢</button>
-        <button class="settings-btn color-btn" data-accent-val="purple" title="Фиолетовый">🟣</button>
+        <button class="settings-btn color-btn" data-accent-val="orange">🟠</button>
+        <button class="settings-btn color-btn" data-accent-val="red">🔴</button>
+        <button class="settings-btn color-btn" data-accent-val="blue">🔵</button>
+        <button class="settings-btn color-btn" data-accent-val="green">🟢</button>
+        <button class="settings-btn color-btn" data-accent-val="purple">🟣</button>
       </div>
     </div>
-
     <div class="settings-block">
       <h3 data-i18n="settings_fontsize">Размер шрифта</h3>
       <div class="settings-row" id="fontRow">
@@ -83,7 +77,6 @@
         <button class="settings-btn" data-font-val="lg" data-i18n="settings_large">Большой</button>
       </div>
     </div>
-
     <div class="settings-block">
       <h3 data-i18n="settings_compact">Компактный режим</h3>
       <div class="settings-row" id="compactRow">
