@@ -202,7 +202,6 @@ section{margin-bottom:48px}
 .rank-badge img{
   width:64px;height:64px;object-fit:contain;flex-shrink:0;
   image-rendering:-webkit-optimize-contrast;
-  filter:drop-shadow(0 0 6px rgba(224,90,58,.35));
 }
 .rank-badge .rank-txt{font-size:12px;color:var(--muted);text-align:center}
 .rank-badge .rank-txt b{display:block;color:var(--text);font-size:14px;margin-bottom:2px}
