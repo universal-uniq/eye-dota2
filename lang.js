@@ -46,14 +46,12 @@ window.I18N = {
     hero_avg_build:'Средний билд', hero_durations:'Игр по длительности',
     hero_open_opendota:'OpenDota ↗',
 
-    // Настройки
     settings_title:'Настройки', settings_theme:'Тема',
     settings_dark:'🌙 Тёмная', settings_light:'☀️ Светлая', settings_auto:'🖥 Авто',
     settings_accent:'Акцентный цвет', settings_fontsize:'Размер шрифта',
     settings_small:'Маленький', settings_medium:'Средний', settings_large:'Большой',
     settings_compact:'Компактный режим', settings_off:'Выкл', settings_on:'Вкл',
 
-    // Рекомендации
     rec_title:'🎯 Персональные рекомендации',
     rec_sub:'Введи account_id — проанализируем последние 50 матчей',
     rec_input_placeholder:'например 88141661',
@@ -64,15 +62,13 @@ window.I18N = {
     rec_try:'Стоит попробовать',
     rec_no_data:'Недостаточно данных', rec_min_games:'минимум 3 матча',
 
-    // Идеальный пик
     pick_title:'⚔️ Идеальный пик',
     pick_sub:'Выбери героев противника — подскажем кого пикнуть и кого забанить',
     pick_enemy:'Герои противника',
     pick_select:'Кликни по герою чтобы добавить/убрать',
     pick_clear:'Очистить', pick_analyze:'🎯 Подобрать пик',
     pick_picks:'Топ-5 пиков', pick_bans:'Топ-5 банов',
-    pick_selected:'Выбрано',
-    pick_need_heroes:'Выбери хотя бы одного героя',
+    pick_selected:'Выбрано', pick_need_heroes:'Выбери хотя бы одного героя',
     pick_wr_vs:'Винрейт против', pick_games_vs:'матчей против',
   },
   en: {
@@ -140,8 +136,7 @@ window.I18N = {
     pick_select:'Click a hero to add/remove',
     pick_clear:'Clear', pick_analyze:'🎯 Find picks',
     pick_picks:'Top-5 picks', pick_bans:'Top-5 bans',
-    pick_selected:'Selected',
-    pick_need_heroes:'Select at least one hero',
+    pick_selected:'Selected', pick_need_heroes:'Select at least one hero',
     pick_wr_vs:'Winrate vs', pick_games_vs:'games vs',
   }
 };
