@@ -6,6 +6,7 @@ const API = 'https://api.opendota.com/api';
 const CDN = 'https://cdn.cloudflare.steamstatic.com';
 const HERO_CDN = `${CDN}/apps/dota2/images/dota_react/heroes`;
 const ITEM_CDN = `${CDN}/apps/dota2/images/dota_react/items`;
+const ITEM_CDN_OLD = `${CDN}/apps/dota2/images/items`;
 const RANK_CDN = 'https://www.opendota.com/assets/images/dota2/rank_icons';
 
 const RANKS = {1:'Herald',2:'Guardian',3:'Crusader',4:'Archon',5:'Legend',6:'Ancient',7:'Divine',8:'Immortal'};
@@ -17,11 +18,8 @@ const GAME_MODES = {
 // ================================================================
 // ГИБРИДНЫЙ ПРОКСИ ДЛЯ STEAM API
 // ================================================================
-// Свой Worker — основной источник (быстрый, надёжный).
-// Если упадёт — автоматически переключимся на публичные прокси.
 const WORKER_BASE = 'https://eye-dota2-proxy.human001user.workers.dev';
 
-// Публичные CORS-прокси (fallback, если Worker недоступен)
 const PUBLIC_PROXIES = [
   url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -64,12 +62,21 @@ function heroImgUrl(id){
   const slug = cache.heroSlug[id];
   return slug ? `${HERO_CDN}/${slug}.png` : '';
 }
+
+// 🎒 Иконка предмета — старый надёжный путь Valve с суффиксом _lg
 function itemImgUrl(key){
+  if(!key) return '';
+  const slug = String(key).toLowerCase().replace(/[^a-z0-9_]/g, '');
+  if(!slug) return '';
+  return `${ITEM_CDN_OLD}/${slug}_lg.png`;
+}
+function itemImgUrlFallback(key){
   if(!key) return '';
   const slug = String(key).toLowerCase().replace(/[^a-z0-9_]/g, '');
   if(!slug) return '';
   return `${ITEM_CDN}/${slug}.png`;
 }
+
 function esc(s){
   return String(s??'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -146,8 +153,9 @@ function applyTheme(theme){
     Chart.defaults.color = theme==='dark' ? '#8b949e' : '#6a7383';
     Chart.defaults.borderColor = theme==='dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
     Chart.defaults.font.family = '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif';
+    Chart.defaults.animation = false;
   }
-  Object.values(cache._charts).forEach(c => { try{ c.update(); }catch{} });
+  Object.values(cache._charts).forEach(c => { try{ c.update('none'); }catch{} });
 }
 function initTheme(){
   const saved = localStorage.getItem('eye-theme') || 'dark';
@@ -185,13 +193,15 @@ async function navigate(){
   if(navigating) return;
   navigating = true;
   try{
+    Object.values(cache._charts).forEach(c => { try{ c.destroy(); }catch{} });
+    cache._charts = {};
+
     const { route, params } = parseHash();
     const app = $('#app');
     if(!app){ navigating=false; return; }
     app.innerHTML = `<section class="empty-state"><span class="dot loading"></span> Загрузка…</section>`;
     $$('#mainNav a').forEach(a => a.classList.toggle('active', a.dataset.route === route));
-    Object.values(cache._charts).forEach(c => { try{ c.destroy(); }catch{} });
-    cache._charts = {};
+
     const fn = routes[route] || routes.servers;
     try{
       await fn(app, params);
@@ -205,7 +215,7 @@ async function navigate(){
 }
 
 // ================================================================
-// СЕРВЕРЫ — гибрид Worker → публичные прокси → fallback
+// СЕРВЕРЫ — гибрид Worker → публичные прокси
 // ================================================================
 const REGIONS = [
   { name: '🇪🇺 Европа',  cellid: 3 },
@@ -213,7 +223,6 @@ const REGIONS = [
   { name: '🌏 Азия',    cellid: 5 },
 ];
 
-// CM-адреса приходят либо строками, либо объектами — нормализуем
 function extractEndpoint(entry){
   if(typeof entry === 'string') return entry;
   if(entry && typeof entry === 'object'){
@@ -222,7 +231,6 @@ function extractEndpoint(entry){
   return '';
 }
 
-// Пробуем сначала Worker, потом публичные прокси
 async function fetchSteam(path){
   const steamUrl = `https://api.steampowered.com${path}`;
   const errors = [];
@@ -253,8 +261,8 @@ async function checkRegion(cellid){
   try{
     const d = await fetchSteam(path);
     const ping = Math.round(performance.now() - t0);
-    const raw = d?.response?.serverlist || [];
-    const servers = raw.map(extractEndpoint).filter(s => s && typeof s === 'string' && s.length > 0);
+    const raw = Array.isArray(d?.response?.serverlist) ? d.response.serverlist : [];
+    const servers = raw.map(extractEndpoint).filter(s => typeof s === 'string' && s.length > 0);
     return { ok: servers.length > 0, total: raw.length, alive: servers.length, servers, ping };
   }catch(e){
     return { ok: false, error: true, message: e.message, servers: [] };
@@ -286,9 +294,7 @@ async function renderServers(app){
   `;
 
   const refresh = async () => {
-    let totalAlive = 0;
-    let totalServers = 0;
-    let failedRegions = 0;
+    let totalAlive = 0, totalServers = 0, failedRegions = 0;
 
     for(const region of REGIONS){
       const res = await checkRegion(region.cellid);
@@ -327,11 +333,7 @@ async function renderServers(app){
     if(!sm) return;
 
     if(totalServers === 0 && failedRegions === REGIONS.length){
-      sm.innerHTML = `
-        <span class="dot bad"></span>
-        Не удалось получить данные. Проверьте статус на
-        <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us</a>
-      `;
+      sm.innerHTML = `<span class="dot bad"></span> Не удалось получить данные. Проверьте статус на <a href="https://steamstat.us" target="_blank" rel="noopener">steamstat.us</a>`;
     } else if(totalServers === 0){
       sm.innerHTML = `<span class="dot warn"></span> Получен пустой список серверов.`;
     } else {
@@ -486,18 +488,16 @@ async function renderBuilds(app){
             ${entries.map(([key, count]) => {
               const item = items[key] || { dname: key };
               const url = itemImgUrl(key);
+              const fallback = itemImgUrlFallback(key);
               const display = item.dname || key;
               return `
-                <div class="hero-card" style="cursor:default">
-                  <div style="aspect-ratio:1;background:var(--bg3);display:flex;align-items:center;justify-content:center;padding:8px;overflow:hidden">
-                    ${url
-                      ? `<img src="${url}" alt="${esc(display)}" loading="lazy"
-                             style="width:100%;height:100%;object-fit:contain"
-                             onerror="this.style.opacity='0'"/>`
-                      : `<span style="font-size:32px;color:var(--muted)">❔</span>`}
+                <div class="item-card">
+                  <div class="img-wrap">
+                    <img src="${url}" alt="${esc(display)}" loading="lazy"
+                         onerror="if(this.dataset.fbk){this.style.opacity='0';}else{this.dataset.fbk='1';this.src='${fallback}';}"/>
                   </div>
-                  <div class="name" style="padding:8px 6px 2px;font-size:12px;font-weight:500;line-height:1.2;min-height:32px">${esc(display)}</div>
-                  <span class="wr" style="display:block;font-size:11px;color:var(--ok);padding-bottom:8px">× ${count.toLocaleString('ru-RU')}</span>
+                  <div class="item-name">${esc(display)}</div>
+                  <span class="item-count">× ${count.toLocaleString('ru-RU')}</span>
                 </div>
               `;
             }).join('')}
@@ -835,7 +835,7 @@ function drawCharts(matches){
           { label:'XPM', data:sorted.map(m=>m.xp_per_min||0), borderColor:'#3fb950', backgroundColor:'rgba(63,185,80,.15)', tension:.3, fill:true, pointRadius:2 },
         ],
       },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top' } } },
+      options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{ position:'top' } } },
     });
   }
 
@@ -852,7 +852,7 @@ function drawCharts(matches){
           { label:'Assists', data:sorted.map(m=>m.assists||0), backgroundColor:'#a371f7' },
         ],
       },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'top' } } },
+      options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{ position:'top' } } },
     });
   }
 }
